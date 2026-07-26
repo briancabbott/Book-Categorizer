@@ -4,6 +4,7 @@ import test from "node:test";
 
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const cssUrl = new URL("../app/globals.css", import.meta.url);
+const recognitionUrl = new URL("../app/api/books/recognize/route.ts", import.meta.url);
 
 test("provides all four Librarian workspaces", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -31,9 +32,10 @@ test("supports a grouped technical catalog and multi-format reading notes", asyn
 });
 
 test("classifies a two-image upload and supports manual correction", async () => {
-  const [page, css] = await Promise.all([
+  const [page, css, recognition] = await Promise.all([
     readFile(pageUrl, "utf8"),
     readFile(cssUrl, "utf8"),
+    readFile(recognitionUrl, "utf8"),
   ]);
   assert.match(page, /multiple onChange=\{choosePhotos\}/);
   assert.match(page, /isbnIndexes\.length === 1/);
@@ -45,4 +47,6 @@ test("classifies a two-image upload and supports manual correction", async () =>
   assert.match(page, /BrowserMultiFormatOneDReader/);
   assert.match(css, /\.side-choices/);
   assert.match(css, /\.assignment-warning/);
+  assert.match(recognition, /matched:\s*false/);
+  assert.doesNotMatch(recognition, /status:\s*404/);
 });

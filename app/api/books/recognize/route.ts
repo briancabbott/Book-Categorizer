@@ -193,5 +193,9 @@ export async function POST(request: Request) {
     const openBook = normalizeOpenLibrary(isbn, await openPromise, method);
     if (openBook) return Response.json({ book: openBook });
   }
-  return Response.json({ error: "No matching edition was found. Try a clearer back-cover photo." }, { status: 404 });
+  return Response.json({
+    book: null,
+    matched: false,
+    error: "No matching edition was found for this image.",
+  });
 }

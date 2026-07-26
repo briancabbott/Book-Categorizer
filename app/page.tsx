@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Book = {
   id: string;
@@ -27,6 +27,12 @@ type Book = {
 type RecognizedBook = Omit<Book, "id" | "series" | "color" | "cover"> & {
   coverUrl?: string;
   sourceRecordId?: string;
+};
+
+type ScanCandidate = {
+  book: RecognizedBook;
+  scanId: number;
+  priority: number;
 };
 
 const starterBooks: Book[] = [
@@ -74,6 +80,9 @@ export default function Home() {
   const [scanError, setScanError] = useState("");
   const [status, setStatus] = useState<"idle" | "review" | "placed">("idle");
   const [placedBook, setPlacedBook] = useState<Book>();
+  const nextScanId = useRef(0);
+  const latestScanId = useRef(0);
+  const bestRecognition = useRef<ScanCandidate | undefined>(undefined);
 
   useEffect(() => {
     fetch("/api/books")
@@ -133,8 +142,29 @@ export default function Home() {
     setRecognitionConfidence(book.recognitionConfidence || 0);
   }
 
-  async function queryBook(payload: { isbn?: string; text?: string; method: string }) {
-    setScanPhase("Checking Google Books and Open Library…");
+  function updateScanPhase(scanId: number, message: string) {
+    if (scanId === latestScanId.current) setScanPhase(message);
+  }
+
+  function candidatePriority(method?: string) {
+    if (method === "barcode") return 3;
+    if (method === "printed-isbn") return 2;
+    return 1;
+  }
+
+  function acceptCandidate(book: RecognizedBook, scanId: number) {
+    const candidate = { book, scanId, priority: candidatePriority(book.recognitionMethod) };
+    const current = bestRecognition.current;
+    if (current && (candidate.priority < current.priority ||
+      (candidate.priority === current.priority && candidate.scanId < current.scanId))) return false;
+    bestRecognition.current = candidate;
+    applyRecognized(book);
+    setScanError("");
+    return true;
+  }
+
+  async function queryBook(payload: { isbn?: string; text?: string; method: string }, scanId: number) {
+    updateScanPhase(scanId, "Checking Google Books and Open Library…");
     const response = await fetch("/api/books/recognize", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -142,8 +172,10 @@ export default function Home() {
     });
     const result = await response.json() as { book?: RecognizedBook; error?: string };
     if (!response.ok || !result.book) throw new Error(result.error || "No matching book was found.");
-    applyRecognized(result.book);
-    setScanPhase(`Identified with ${result.book.recognitionConfidence || 0}% confidence`);
+    acceptCandidate(result.book, scanId);
+    if (scanId === latestScanId.current) {
+      setScanPhase("");
+    }
   }
 
   function isbnFromText(value: string) {
@@ -152,15 +184,15 @@ export default function Home() {
     return candidates.map((candidate) => candidate.replace(/[^0-9X]/gi, "")).find((candidate) => candidate.length === 10 || candidate.length === 13);
   }
 
-  async function recognizePhoto(file: File, preview: string) {
+  async function recognizePhoto(file: File, preview: string, scanId: number) {
     setScanError("");
-    setScanPhase("Looking for an ISBN barcode…");
+    updateScanPhase(scanId, "Looking for an ISBN barcode…");
     try {
       const { BrowserMultiFormatReader } = await import("@zxing/browser");
       const result = await new BrowserMultiFormatReader().decodeFromImageUrl(preview);
       const detected = isbnFromText(result.getText());
       if (detected) {
-        await queryBook({ isbn: detected, method: "barcode" });
+        await queryBook({ isbn: detected, method: "barcode" }, scanId);
         return;
       }
     } catch {
@@ -168,21 +200,25 @@ export default function Home() {
     }
 
     try {
-      setScanPhase("Reading the cover text…");
+      updateScanPhase(scanId, "Reading the cover text…");
       const { recognize } = await import("tesseract.js");
       const result = await recognize(file, "eng", {
         logger: (message) => {
-          if (message.status === "recognizing text") setScanPhase(`Reading the cover… ${Math.round((message.progress || 0) * 100)}%`);
+          if (message.status === "recognizing text") updateScanPhase(scanId, `Reading the cover… ${Math.round((message.progress || 0) * 100)}%`);
         },
       });
       const text = result.data.text.trim();
       const printedIsbn = isbnFromText(text);
       await queryBook(printedIsbn
         ? { isbn: printedIsbn, text, method: "printed-isbn" }
-        : { text, method: "title-author" });
+        : { text, method: "title-author" }, scanId);
     } catch (error) {
-      setScanPhase("");
-      setScanError(error instanceof Error ? error.message : "I couldn’t identify this edition. Try a clearer cover photo.");
+      if (scanId === latestScanId.current) {
+        setScanPhase("");
+        if (!bestRecognition.current) {
+          setScanError(error instanceof Error ? error.message : "I couldn’t identify this edition. Try a clearer cover photo.");
+        }
+      }
     }
   }
 
@@ -190,11 +226,13 @@ export default function Home() {
     return async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
+      const scanId = ++nextScanId.current;
+      latestScanId.current = scanId;
       const preview = URL.createObjectURL(file);
       if (side === "front") { setFront(preview); setFrontFile(file); }
       else { setBack(preview); setBackFile(file); }
       setStatus("review");
-      await recognizePhoto(file, preview);
+      await recognizePhoto(file, preview, scanId);
     };
   }
 
@@ -228,6 +266,8 @@ export default function Home() {
   }
 
   function reset() {
+    latestScanId.current = ++nextScanId.current;
+    bestRecognition.current = undefined;
     setFront(undefined);
     setBack(undefined);
     setFrontFile(undefined);

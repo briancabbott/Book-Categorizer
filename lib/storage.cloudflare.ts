@@ -8,17 +8,47 @@ function runtime() {
 }
 
 async function prepareDatabase(db: D1Database) {
-  await db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS books (
+  await db.prepare(`CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, subtitle TEXT, author TEXT NOT NULL,
       series TEXT, category TEXT NOT NULL, color TEXT NOT NULL, isbn TEXT, isbn10 TEXT,
       isbn13 TEXT, publisher TEXT, published_date TEXT, description TEXT, page_count INTEGER,
       language TEXT, metadata_source TEXT, recognition_method TEXT,
       recognition_confidence INTEGER, front_image_key TEXT, back_image_key TEXT,
       created_at INTEGER NOT NULL
-    )`),
-    db.prepare("CREATE INDEX IF NOT EXISTS books_sort_idx ON books(category, author, series, title)"),
-  ]);
+    )`).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS librarian_schema_migrations (
+    version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL
+  )`).run();
+
+  const tableInfo = await db.prepare("PRAGMA table_info(books)").all<{ name: string }>();
+  const existing = new Set(tableInfo.results.map((column) => column.name));
+  const additions: Array<[string, string]> = [
+    ["author", "author TEXT NOT NULL DEFAULT 'Unknown author'"],
+    ["series", "series TEXT"],
+    ["category", "category TEXT NOT NULL DEFAULT 'STEM — To classify'"],
+    ["color", "color TEXT NOT NULL DEFAULT '#657994'"],
+    ["isbn", "isbn TEXT"],
+    ["subtitle", "subtitle TEXT"],
+    ["isbn10", "isbn10 TEXT"],
+    ["isbn13", "isbn13 TEXT"],
+    ["publisher", "publisher TEXT"],
+    ["published_date", "published_date TEXT"],
+    ["description", "description TEXT"],
+    ["page_count", "page_count INTEGER"],
+    ["language", "language TEXT"],
+    ["metadata_source", "metadata_source TEXT"],
+    ["recognition_method", "recognition_method TEXT"],
+    ["recognition_confidence", "recognition_confidence INTEGER"],
+    ["front_image_key", "front_image_key TEXT"],
+    ["back_image_key", "back_image_key TEXT"],
+    ["created_at", "created_at INTEGER NOT NULL DEFAULT 0"],
+  ];
+  for (const [name, definition] of additions) {
+    if (!existing.has(name)) await db.prepare(`ALTER TABLE books ADD COLUMN ${definition}`).run();
+  }
+  await db.prepare("CREATE INDEX IF NOT EXISTS books_sort_idx ON books(category, author, series, title)").run();
+  await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
+    (version, name, applied_at) VALUES (3, 'durable additive book schema', ?)`).bind(Date.now()).run();
 }
 
 const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,

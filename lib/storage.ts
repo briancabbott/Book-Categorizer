@@ -7,20 +7,38 @@ import type { BookInput, BookRecord, BookStorage, ImageInput, StoredImage } from
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), ".data");
 const booksFile = path.join(dataDir, "books.json");
+const localSchemaVersion = 1;
 
-async function localBooks() {
+type LocalStore = { schemaVersion: number; books: BookRecord[] };
+
+async function writeLocalStore(store: LocalStore) {
+  await mkdir(dataDir, { recursive: true });
+  const temporary = `${booksFile}.${crypto.randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify(store, null, 2));
+  await rename(temporary, booksFile);
+}
+
+async function localStore(): Promise<LocalStore> {
+  let source: string;
   try {
-    return JSON.parse(await readFile(booksFile, "utf8")) as BookRecord[];
-  } catch {
-    return [];
+    source = await readFile(booksFile, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schemaVersion: localSchemaVersion, books: [] };
+    throw error;
   }
+  const parsed = JSON.parse(source) as LocalStore | BookRecord[];
+  if (Array.isArray(parsed)) {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(path.join(dataDir, "books.pre-migration-v0.json"), source, { flag: "wx" }).catch(() => {});
+    const migrated = { schemaVersion: localSchemaVersion, books: parsed };
+    await writeLocalStore(migrated);
+    return migrated;
+  }
+  return { schemaVersion: parsed.schemaVersion || localSchemaVersion, books: parsed.books || [] };
 }
 
 async function writeLocalBooks(books: BookRecord[]) {
-  await mkdir(dataDir, { recursive: true });
-  const temporary = `${booksFile}.${crypto.randomUUID()}.tmp`;
-  await writeFile(temporary, JSON.stringify(books, null, 2));
-  await rename(temporary, booksFile);
+  await writeLocalStore({ schemaVersion: localSchemaVersion, books });
 }
 
 async function writeLocalImage(id: string, side: string, image: ImageInput) {
@@ -35,14 +53,14 @@ async function writeLocalImage(id: string, side: string, image: ImageInput) {
 function localStorage(): BookStorage {
   return {
     async listBooks() {
-      return (await localBooks()).sort((a, b) =>
+      return (await localStore()).books.sort((a, b) =>
         [a.category, a.author, a.series || a.title, a.title].join("|")
           .localeCompare([b.category, b.author, b.series || b.title, b.title].join("|")));
     },
     async createBook(input, images) {
       const id = crypto.randomUUID();
       const book: BookRecord = { ...input, id, createdAt: Date.now(), cover: images.front ? `/api/books/image/${id}/front` : undefined };
-      const books = await localBooks();
+      const books = (await localStore()).books;
       await Promise.all([
         writeLocalBooks([...books, book]),
         ...(images.front ? [writeLocalImage(id, "front", images.front)] : []),

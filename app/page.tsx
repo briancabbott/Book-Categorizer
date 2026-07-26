@@ -114,6 +114,8 @@ export default function Home() {
   const [recognitionConfidence, setRecognitionConfidence] = useState(0);
   const [scanPhase, setScanPhase] = useState("");
   const [scanError, setScanError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"idle" | "review" | "placed">("idle");
   const [placedBook, setPlacedBook] = useState<Book>();
   const [shelfCapacity, setShelfCapacity] = useState(10);
@@ -313,9 +315,6 @@ export default function Home() {
   async function addBook() {
     if (!title.trim() || !author.trim()) return;
     const book = { ...proposed, id: crypto.randomUUID() };
-    setBooks((current) => [...current, book]);
-    setPlacedBook(book);
-    setStatus("placed");
     const data = new FormData();
     data.set("title", book.title);
     data.set("subtitle", book.subtitle || "");
@@ -336,7 +335,20 @@ export default function Home() {
     data.set("recognitionConfidence", String(book.recognitionConfidence || 0));
     if (frontFile) data.set("front", frontFile);
     if (backFile) data.set("back", backFile);
-    fetch("/api/books", { method: "POST", body: data }).catch(() => {});
+    setSaving(true);
+    setSaveError("");
+    try {
+      const response = await fetch("/api/books", { method: "POST", body: data });
+      const result = await response.json() as Book & { error?: string; detail?: string };
+      if (!response.ok) throw new Error(result.detail || result.error || "The book could not be saved.");
+      setBooks((current) => [...current, result]);
+      setPlacedBook(result);
+      setStatus("placed");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The book could not be saved.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function reset() {
@@ -364,6 +376,7 @@ export default function Home() {
     setRecognitionConfidence(0);
     setScanPhase("");
     setScanError("");
+    setSaveError("");
     setStatus("idle");
     setPlacedBook(undefined);
   }
@@ -505,6 +518,7 @@ export default function Home() {
                 </div>
               )}
               {scanError && <p className="scan-error">{scanError}</p>}
+              {saveError && <p className="scan-error">{saveError}</p>}
               <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Book title" required /></label>
               <label>Subtitle<input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder="Optional" /></label>
               <label>Author<input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author name" required /></label>
@@ -520,7 +534,7 @@ export default function Home() {
               {(description || pageCount || language) && (
                 <p className="metadata-note">{[pageCount && `${pageCount} pages`, language?.toUpperCase(), publisher].filter(Boolean).join(" · ")}</p>
               )}
-              <button className="primary" type="submit">Find its place <span>→</span></button>
+              <button className="primary" type="submit" disabled={saving}>{saving ? "Saving to your library…" : "Find its place"} <span>→</span></button>
             </form>
           )}
         </div>

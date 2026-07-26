@@ -13,7 +13,10 @@ npm run dev:local
 ```
 
 `STORAGE_DRIVER=local` writes book metadata and private image files beneath
-`DATA_DIR` (default `.data`). The directory is ignored by Git.
+`DATA_DIR` (default `.data`). The directory is ignored by Git but is durable:
+application reloads and rebuilds do not replace it. Legacy array-format data is
+migrated automatically to the current versioned envelope, with the original
+preserved as `books.pre-migration-v0.json`.
 
 For a local production check:
 
@@ -77,3 +80,17 @@ All environments implement the same three operations:
 
 Recognition is storage-independent and continues to use the same barcode, OCR,
 Google Books, and Open Library pipeline everywhere.
+
+## Data migrations
+
+Persisted data is never reset as part of application startup. Schema changes
+must be additive, numbered migrations:
+
+- D1 migrations live in `drizzle/` and are also applied idempotently by the
+  Cloudflare storage adapter so local development databases upgrade in place.
+- Local filesystem records carry a `schemaVersion`; migrations preserve a
+  pre-migration copy before writing the upgraded format.
+- Existing columns and records must not be dropped or rewritten without a
+  separately reviewed backup and migration plan.
+
+Do not delete `.data/` or `.wrangler/state/`; they contain the local library.

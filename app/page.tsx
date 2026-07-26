@@ -35,6 +35,22 @@ type ScanCandidate = {
   priority: number;
 };
 
+type ReadingNote = {
+  id: string;
+  type: "typed" | "spoken" | "image";
+  text: string;
+  image?: string;
+  createdAt: number;
+};
+
+type ReadingGoal = {
+  id: string;
+  title: string;
+  description: string;
+  bookIds: string[];
+  notes: ReadingNote[];
+};
+
 const starterBooks: Book[] = [];
 
 const stemSections = [
@@ -74,6 +90,7 @@ function bookSort(a: Book, b: Book) {
 }
 
 export default function Home() {
+  const [view, setView] = useState<"add" | "library" | "shelves" | "reading">("add");
   const [books, setBooks] = useState<Book[]>(starterBooks);
   const [front, setFront] = useState<string>();
   const [back, setBack] = useState<string>();
@@ -99,6 +116,13 @@ export default function Home() {
   const [scanError, setScanError] = useState("");
   const [status, setStatus] = useState<"idle" | "review" | "placed">("idle");
   const [placedBook, setPlacedBook] = useState<Book>();
+  const [shelfCapacity, setShelfCapacity] = useState(10);
+  const [readingGoals, setReadingGoals] = useState<ReadingGoal[]>([]);
+  const [goalTitle, setGoalTitle] = useState("");
+  const [goalDescription, setGoalDescription] = useState("");
+  const [goalBookIds, setGoalBookIds] = useState<string[]>([]);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [listeningGoal, setListeningGoal] = useState<string>();
   const nextScanId = useRef(0);
   const latestScanId = useRef(0);
   const bestRecognition = useRef<ScanCandidate | undefined>(undefined);
@@ -110,7 +134,38 @@ export default function Home() {
       .catch(() => { /* The sample shelf remains available in local preview. */ });
   }, []);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("librarian-reading-goals");
+      if (saved) setReadingGoals(JSON.parse(saved) as ReadingGoal[]);
+    } catch {
+      // A damaged browser entry should not prevent the library from loading.
+    }
+    const resize = () => setShelfCapacity(Math.max(3, Math.floor((window.innerWidth * .88 - 36) / 77)));
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("librarian-reading-goals", JSON.stringify(readingGoals));
+    } catch {
+      // Large photographed notes may exceed browser storage; the rest of the journal remains usable.
+    }
+  }, [readingGoals]);
+
   const ordered = useMemo(() => [...books].sort(bookSort), [books]);
+  const shelfRows = useMemo(() => {
+    const rows: Book[][] = [];
+    for (let index = 0; index < ordered.length; index += shelfCapacity) rows.push(ordered.slice(index, index + shelfCapacity));
+    return rows;
+  }, [ordered, shelfCapacity]);
+  const libraryGroups = useMemo(() => {
+    const groups = new Map<string, Book[]>();
+    ordered.forEach((book) => groups.set(book.category, [...(groups.get(book.category) || []), book]));
+    return [...groups.entries()];
+  }, [ordered]);
   const proposed: Book = useMemo(() => ({
     id: "preview",
     title: title || "New book",
@@ -313,6 +368,65 @@ export default function Home() {
     setPlacedBook(undefined);
   }
 
+  function createReadingGoal() {
+    if (!goalTitle.trim()) return;
+    setReadingGoals((current) => [...current, {
+      id: crypto.randomUUID(),
+      title: goalTitle.trim(),
+      description: goalDescription.trim(),
+      bookIds: goalBookIds,
+      notes: [],
+    }]);
+    setGoalTitle("");
+    setGoalDescription("");
+    setGoalBookIds([]);
+  }
+
+  function addNote(goalId: string, type: ReadingNote["type"], text: string, image?: string) {
+    if (!text.trim() && !image) return;
+    setReadingGoals((current) => current.map((goal) => goal.id === goalId ? {
+      ...goal,
+      notes: [...goal.notes, { id: crypto.randomUUID(), type, text: text.trim(), image, createdAt: Date.now() }],
+    } : goal));
+    setNoteDrafts((current) => ({ ...current, [goalId]: "" }));
+  }
+
+  function dictateNote(goalId: string) {
+    type Recognition = {
+      continuous: boolean;
+      interimResults: boolean;
+      lang: string;
+      start(): void;
+      onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
+      onend: (() => void) | null;
+      onerror: (() => void) | null;
+    };
+    const RecognitionConstructor = (window as unknown as {
+      SpeechRecognition?: new () => Recognition;
+      webkitSpeechRecognition?: new () => Recognition;
+    }).SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: new () => Recognition }).webkitSpeechRecognition;
+    if (!RecognitionConstructor) {
+      setNoteDrafts((current) => ({ ...current, [goalId]: "Speech recognition is not available in this browser." }));
+      return;
+    }
+    const recognition = new RecognitionConstructor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    setListeningGoal(goalId);
+    recognition.onresult = (event) => addNote(goalId, "spoken", event.results[0][0].transcript);
+    recognition.onend = () => setListeningGoal(undefined);
+    recognition.onerror = () => setListeningGoal(undefined);
+    recognition.start();
+  }
+
+  function addImageNote(goalId: string, file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => addNote(goalId, "image", file.name, String(reader.result || ""));
+    reader.readAsDataURL(file);
+  }
+
   const hasDraft = Boolean(front || back || title || author || scanPhase);
 
   return (
@@ -323,12 +437,15 @@ export default function Home() {
           Librarian
         </a>
         <nav aria-label="Primary navigation">
-          <button className="nav-active">Add a book</button>
-          <button onClick={() => document.getElementById("library")?.scrollIntoView({ behavior: "smooth" })}>My library</button>
+          <button className={view === "add" ? "nav-active" : ""} onClick={() => setView("add")}>Add a Book</button>
+          <button className={view === "library" ? "nav-active" : ""} onClick={() => setView("library")}>My Library</button>
+          <button className={view === "shelves" ? "nav-active" : ""} onClick={() => setView("shelves")}>My Shelves</button>
+          <button className={view === "reading" ? "nav-active" : ""} onClick={() => setView("reading")}>My Reading</button>
         </nav>
         <div className="library-count"><span>{books.length}</span> books shelved</div>
       </header>
 
+      {view === "add" && <>
       <section className="hero">
         <div>
           <p className="eyebrow">Your personal shelf guide</p>
@@ -422,23 +539,99 @@ export default function Home() {
           <button className="text-button" onClick={reset}>Add another book →</button>
         </section>
       )}
+      </>}
 
-      <section id="library" className="shelf-section">
-        <div className="shelf-heading">
-          <div><p className="eyebrow">Your living collection</p><h2>A shelf that gets smarter<br />with every book.</h2></div>
-          <p>{books.length} books · {new Set(books.map((book) => book.author)).size} authors · {new Set(books.map((book) => book.category)).size} sections</p>
-        </div>
-        <div className="shelf" aria-label="Your books in recommended order">
-          <div className="spines">
-            {ordered.map((book) => <BookSpine key={book.id} book={book} />)}
+      {view === "library" && (
+        <section className="library-view">
+          <ViewHeading eyebrow="Catalog" title="My Library" detail={`${books.length} books · ${libraryGroups.length} technical sections`} />
+          {!books.length ? <EmptyCollection onAdd={() => setView("add")} /> : (
+            <div className="library-table" role="table" aria-label="Technical library catalog">
+              <div className="library-columns" role="row">
+                <strong role="columnheader">Title</strong><strong role="columnheader">Authors</strong>
+                <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong>
+              </div>
+              {libraryGroups.map(([section, sectionBooks], index) => {
+                const [discipline, subsection = "General"] = section.split(" — ");
+                return <div className="catalog-group" key={section}>
+                  {(index === 0 || libraryGroups[index - 1][0].split(" — ")[0] !== discipline) &&
+                    <div className="discipline-bar">{discipline}</div>}
+                  <div className="subsection-bar"><span>{subsection}</span><small>{sectionBooks.length} {sectionBooks.length === 1 ? "book" : "books"}</small></div>
+                  {sectionBooks.map((book) => <div className="library-row" role="row" key={book.id}>
+                    <span role="cell"><strong>{book.title}</strong>{book.subtitle && <small>{book.subtitle}</small>}</span>
+                    <span role="cell">{book.author}</span><span role="cell">{book.publishedDate || "—"}</span>
+                    <span role="cell">{book.isbn13 || book.isbn10 || book.isbn || "—"}</span>
+                  </div>)}
+                </div>;
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {view === "shelves" && (
+        <section className="shelves-view">
+          <ViewHeading eyebrow="Physical order" title="My Shelves" detail="Read left to right, then continue on the shelf below." />
+          {!books.length ? <EmptyCollection onAdd={() => setView("add")} /> : (
+            <div className="shelf-stack" aria-label="Books in recommended shelf order">
+              {shelfRows.map((row, rowIndex) => <div className="shelf-run" key={rowIndex}>
+                <div className="shelf-number">Shelf {rowIndex + 1}</div>
+                <div className="spines">{row.map((book) => <BookSpine key={book.id} book={book} />)}</div>
+                <div className="shelf-board" />
+              </div>)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {view === "reading" && (
+        <section className="reading-view">
+          <ViewHeading eyebrow="Reading journal" title="Current learning goals" detail="Connect books to what you are learning, then capture evidence and ideas as you go." />
+          <div className="goal-creator">
+            <div><label>Learning goal<input value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="e.g. Master randomized algorithms" /></label>
+              <label>What does success look like?<textarea value={goalDescription} onChange={(event) => setGoalDescription(event.target.value)} placeholder="Describe the concepts, problems, or outcome you are working toward." /></label></div>
+            <fieldset><legend>Books for this goal</legend>
+              {!ordered.length ? <p>Add books to your library first.</p> : ordered.map((book) =>
+                <label className="book-check" key={book.id}><input type="checkbox" checked={goalBookIds.includes(book.id)}
+                  onChange={() => setGoalBookIds((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])} />
+                  <span><strong>{book.title}</strong><small>{book.author}</small></span></label>)}
+            </fieldset>
+            <button className="primary" onClick={createReadingGoal} disabled={!goalTitle.trim()}>Create learning goal <span>→</span></button>
           </div>
-          <div className="shelf-board" />
-        </div>
-      </section>
+          <div className="goal-list">
+            {readingGoals.map((goal) => <article className="goal-card" key={goal.id}>
+              <header><div><p className="eyebrow">Active goal</p><h2>{goal.title}</h2><p>{goal.description}</p></div><span>{goal.notes.length} notes</span></header>
+              <div className="goal-books">{goal.bookIds.map((id) => books.find((book) => book.id === id)).filter(Boolean).map((book) =>
+                <div key={book!.id} style={{ borderColor: book!.color }}><strong>{book!.title}</strong><small>{book!.author}</small></div>)}</div>
+              <div className="note-composer">
+                <textarea value={noteDrafts[goal.id] || ""} onChange={(event) => setNoteDrafts((current) => ({ ...current, [goal.id]: event.target.value }))}
+                  placeholder="Write a note, proof sketch, question, quotation, or connection…" />
+                <div><button onClick={() => addNote(goal.id, "typed", noteDrafts[goal.id] || "")}>Save typed note</button>
+                  <button onClick={() => dictateNote(goal.id)}>{listeningGoal === goal.id ? "Listening…" : "🎙 Speak a note"}</button>
+                  <label className="image-note">▣ Photograph a note<input type="file" accept="image/*" capture="environment" onChange={(event) => addImageNote(goal.id, event.target.files?.[0])} /></label></div>
+              </div>
+              <div className="notes-timeline">{[...goal.notes].reverse().map((note) => <div className={`journal-note ${note.type}`} key={note.id}>
+                <small>{note.type} · {new Date(note.createdAt).toLocaleString()}</small>
+                {note.image && <img src={note.image} alt={note.text || "Photographed reading note"} />}
+                {note.text && <p>{note.text}</p>}
+              </div>)}</div>
+            </article>)}
+          </div>
+        </section>
+      )}
 
       <footer><span>Librarian</span><p>Made for the pleasure of finding things again.</p><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to top ↑</button></footer>
     </main>
   );
+}
+
+function ViewHeading({ eyebrow, title, detail }: { eyebrow: string; title: string; detail: string }) {
+  return <div className="view-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1></div><p>{detail}</p></div>;
+}
+
+function EmptyCollection({ onAdd }: { onAdd(): void }) {
+  return <div className="empty-collection"><div className="waiting-books" aria-hidden="true"><i /><i /><i /><i /></div>
+    <h2>Your technical library starts here.</h2><p>Add the first book, and Librarian will begin building its structure.</p>
+    <button className="primary" onClick={onAdd}>Add a Book <span>→</span></button></div>;
 }
 
 function BookSpine({ book }: { book: Book }) {

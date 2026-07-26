@@ -11,7 +11,13 @@ type GoogleVolume = {
 type OpenLibraryEdition = {
   title?: string; subtitle?: string; publishers?: string[]; publish_date?: string;
   number_of_pages?: number; isbn_10?: string[]; isbn_13?: string[];
-  covers?: number[]; authors?: { key: string }[];
+  covers?: number[]; authors?: { key: string }[]; subjects?: string[];
+  works?: { key: string }[];
+};
+
+type OpenLibraryWork = {
+  authors?: { author?: { key?: string } }[];
+  subjects?: string[];
 };
 
 const openLibraryHeaders = {
@@ -50,15 +56,34 @@ function overlapScore(query: string, volume: GoogleVolume) {
   return matches / wanted.size;
 }
 
-function categoryFor(values: string[] = []) {
+function categoryFor(values: Array<string | undefined> = []) {
   const value = values.join(" ").toLowerCase();
-  if (/science fiction|sci-fi/.test(value)) return "Science fiction";
-  if (/fantasy/.test(value)) return "Fantasy";
-  if (/mystery|detective|thriller|crime/.test(value)) return "Mystery";
-  if (/history/.test(value)) return "History";
-  if (/biograph|memoir/.test(value)) return "Biography";
-  if (/art|design|architecture/.test(value)) return "Art & design";
-  return "Literary fiction";
+  if (/algorithm|data structure|combinatori|discrete math|graph theor/.test(value)) return "Computer Science — Algorithms & Theory";
+  if (/artificial intelligence|machine learning|deep learning|neural network|natural language|computer vision/.test(value)) return "Computer Science — AI & Machine Learning";
+  if (/operating system|computer architecture|distributed system|parallel comput|concurren|cloud comput/.test(value)) return "Computer Science — Systems & Architecture";
+  if (/programming language|compiler|functional programming|type system|program semantics/.test(value)) return "Computer Science — Programming Languages";
+  if (/software engineering|software design|design pattern|testing|devops/.test(value)) return "Computer Science — Software Engineering";
+  if (/database|information retrieval|data mining|data management/.test(value)) return "Computer Science — Data & Databases";
+  if (/network|cybersecurity|cryptograph|computer security/.test(value)) return "Computer Science — Networks & Security";
+  if (/computer science|computing|programming|computer program/.test(value)) return "Computer Science — General";
+  if (/linear algebra|abstract algebra|group theor|ring theor|number theor/.test(value)) return "Mathematics — Algebra & Number Theory";
+  if (/real analysis|complex analysis|calculus|differential equation|functional analysis/.test(value)) return "Mathematics — Analysis";
+  if (/geometry|topology|manifold/.test(value)) return "Mathematics — Geometry & Topology";
+  if (/probability|stochastic|statistics|statistical inference/.test(value)) return "Mathematics — Probability & Statistics";
+  if (/numerical|optimization|operations research|applied mathematics/.test(value)) return "Mathematics — Applied & Computational";
+  if (/mathematical logic|set theory|foundations of mathematics/.test(value)) return "Mathematics — Logic & Foundations";
+  if (/mathematics|mathematical/.test(value)) return "Mathematics — General";
+  if (/quantum/.test(value)) return "Physics — Quantum Mechanics";
+  if (/relativity|gravitation/.test(value)) return "Physics — Relativity & Gravitation";
+  if (/electromagnet|electrodynamic/.test(value)) return "Physics — Electromagnetism";
+  if (/thermodynamic|statistical mechanics/.test(value)) return "Physics — Thermodynamics & Statistical Mechanics";
+  if (/condensed matter|solid state/.test(value)) return "Physics — Condensed Matter";
+  if (/optics|photon/.test(value)) return "Physics — Optics & Photonics";
+  if (/particle physics|nuclear physics|quantum field/.test(value)) return "Physics — Particle & Nuclear Physics";
+  if (/astrophys|cosmolog|astronom/.test(value)) return "Physics — Astrophysics & Cosmology";
+  if (/classical mechanics|mechanics|dynamics/.test(value)) return "Physics — Classical Mechanics";
+  if (/physics|physical science/.test(value)) return "Physics — General";
+  return "STEM — To classify";
 }
 
 function normalizeGoogle(volume: GoogleVolume, method: "barcode" | "printed-isbn" | "title-author", confidence: number) {
@@ -71,7 +96,7 @@ function normalizeGoogle(volume: GoogleVolume, method: "barcode" | "printed-isbn
     isbn: isbn13 || isbn10, isbn10, isbn13, publisher: info.publisher || "",
     publishedDate: info.publishedDate || "", description: info.description || "",
     pageCount: info.pageCount || null, language: info.language || "",
-    category: categoryFor(info.categories),
+    category: categoryFor([info.title, info.subtitle, info.description, ...(info.categories || [])]),
     coverUrl: info.imageLinks?.thumbnail?.replace("http://", "https://") || "",
     metadataSource: "google-books", sourceRecordId: volume.id,
     recognitionMethod: method, recognitionConfidence: Math.round(confidence * 100),
@@ -82,12 +107,61 @@ async function lookupOpenLibrary(isbn: string) {
   const response = await fetch(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`, { headers: openLibraryHeaders });
   if (!response.ok) return undefined;
   const edition = await response.json() as OpenLibraryEdition;
-  const authorNames = await Promise.all((edition.authors || []).slice(0, 4).map(async ({ key }) => {
+  let authorKeys = (edition.authors || []).map(({ key }) => key);
+  if (!authorKeys.length && edition.works?.[0]?.key) {
+    const workResponse = await fetch(`https://openlibrary.org${edition.works[0].key}.json`, { headers: openLibraryHeaders });
+    if (workResponse.ok) {
+      const work = await workResponse.json() as OpenLibraryWork;
+      authorKeys = (work.authors || []).map(({ author }) => author?.key || "").filter(Boolean);
+      edition.subjects = [...(edition.subjects || []), ...(work.subjects || [])];
+    }
+  }
+  const authorNames = await Promise.all(authorKeys.slice(0, 12).map(async (key) => {
     const authorResponse = await fetch(`https://openlibrary.org${key}.json`, { headers: openLibraryHeaders });
     if (!authorResponse.ok) return "";
     return ((await authorResponse.json()) as { name?: string }).name || "";
   }));
   return { edition, authorNames: authorNames.filter(Boolean) };
+}
+
+function normalizeOpenLibrary(
+  isbn: string,
+  open: Awaited<ReturnType<typeof lookupOpenLibrary>>,
+  method: "barcode" | "printed-isbn" | "title-author",
+) {
+  if (!open) return undefined;
+  const { edition, authorNames } = open;
+  return {
+    title: edition.title || "", subtitle: edition.subtitle || "", author: authorNames.join(", "),
+    isbn, isbn10: edition.isbn_10?.[0] || "", isbn13: edition.isbn_13?.[0] || "",
+    publisher: edition.publishers?.[0] || "", publishedDate: edition.publish_date || "",
+    description: "", pageCount: edition.number_of_pages || null, language: "",
+    category: categoryFor([edition.title, edition.subtitle, ...(edition.subjects || [])]),
+    coverUrl: edition.covers?.[0] ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg` : "",
+    metadataSource: "open-library", sourceRecordId: "", recognitionMethod: method,
+    recognitionConfidence: 96,
+  };
+}
+
+function mergeIsbnMetadata(
+  google: ReturnType<typeof normalizeGoogle>,
+  open: ReturnType<typeof normalizeOpenLibrary>,
+) {
+  if (!open) return google;
+  const googleAuthors = google.author.split(",").filter(Boolean);
+  const openAuthors = open.author.split(",").filter(Boolean);
+  return {
+    ...open,
+    ...google,
+    author: openAuthors.length > googleAuthors.length ? open.author : google.author || open.author,
+    isbn10: google.isbn10 || open.isbn10,
+    isbn13: google.isbn13 || open.isbn13,
+    publisher: google.publisher || open.publisher,
+    publishedDate: google.publishedDate || open.publishedDate,
+    pageCount: google.pageCount || open.pageCount,
+    coverUrl: google.coverUrl || open.coverUrl,
+    metadataSource: "google-books + open-library",
+  };
 }
 
 export async function POST(request: Request) {
@@ -101,32 +175,23 @@ export async function POST(request: Request) {
   const query = isbn ? `isbn:${isbn}` : lines.slice(0, 5).map((line) => `"${line}"`).join(" ");
   if (!query) return Response.json({ error: "No ISBN or readable cover text was found." }, { status: 422 });
 
+  const openPromise = isbn ? lookupOpenLibrary(isbn).catch(() => undefined) : Promise.resolve(undefined);
   const googleResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&printType=books&maxResults=10`);
   const google = googleResponse.ok ? await googleResponse.json() as { items?: GoogleVolume[] } : {};
   const ranked = (google.items || []).map((volume) => ({ volume, score: isbn ? 1 : overlapScore(ocrText, volume) })).sort((a, b) => b.score - a.score);
   if (ranked[0]) {
     const confidence = isbn ? 0.99 : Math.min(0.94, 0.62 + ranked[0].score * 0.34);
+    const googleBook = normalizeGoogle(ranked[0].volume, method, confidence);
+    const openBook = isbn ? normalizeOpenLibrary(isbn, await openPromise, method) : undefined;
     return Response.json({
-      book: normalizeGoogle(ranked[0].volume, method, confidence),
+      book: mergeIsbnMetadata(googleBook, openBook),
       candidates: ranked.slice(1, 3).map(({ volume, score }) => normalizeGoogle(volume, "title-author", Math.min(0.9, score))),
     });
   }
 
   if (isbn) {
-    const open = await lookupOpenLibrary(isbn);
-    if (open) {
-      const { edition, authorNames } = open;
-      return Response.json({ book: {
-        title: edition.title || "", subtitle: edition.subtitle || "", author: authorNames.join(", "),
-        isbn, isbn10: edition.isbn_10?.[0] || "", isbn13: edition.isbn_13?.[0] || "",
-        publisher: edition.publishers?.[0] || "", publishedDate: edition.publish_date || "",
-        description: "", pageCount: edition.number_of_pages || null, language: "",
-        category: "Literary fiction",
-        coverUrl: edition.covers?.[0] ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg` : "",
-        metadataSource: "open-library", sourceRecordId: "", recognitionMethod: method,
-        recognitionConfidence: 96,
-      } });
-    }
+    const openBook = normalizeOpenLibrary(isbn, await openPromise, method);
+    if (openBook) return Response.json({ book: openBook });
   }
   return Response.json({ error: "No matching edition was found. Try a clearer back-cover photo." }, { status: 404 });
 }

@@ -35,16 +35,35 @@ type ScanCandidate = {
   priority: number;
 };
 
-const starterBooks: Book[] = [
-  { id: "1", title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", series: "Hainish Cycle", category: "Science fiction", color: "#cd725c" },
-  { id: "2", title: "The Dispossessed", author: "Ursula K. Le Guin", series: "Hainish Cycle", category: "Science fiction", color: "#edb458" },
-  { id: "3", title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", series: "Earthsea", category: "Fantasy", color: "#568f78" },
-  { id: "4", title: "The Tombs of Atuan", author: "Ursula K. Le Guin", series: "Earthsea", category: "Fantasy", color: "#657994" },
-  { id: "5", title: "The Farthest Shore", author: "Ursula K. Le Guin", series: "Earthsea", category: "Fantasy", color: "#7d5a68" },
-  { id: "6", title: "Kindred", author: "Octavia E. Butler", series: "", category: "Science fiction", color: "#a64b45" },
-  { id: "7", title: "Parable of the Sower", author: "Octavia E. Butler", series: "Earthseed", category: "Science fiction", color: "#c78d47" },
-  { id: "8", title: "Parable of the Talents", author: "Octavia E. Butler", series: "Earthseed", category: "Science fiction", color: "#6c744b" },
-  { id: "9", title: "Piranesi", author: "Susanna Clarke", series: "", category: "Fantasy", color: "#7494a6" },
+const starterBooks: Book[] = [];
+
+const stemSections = [
+  "Computer Science — Algorithms & Theory",
+  "Computer Science — AI & Machine Learning",
+  "Computer Science — Systems & Architecture",
+  "Computer Science — Programming Languages",
+  "Computer Science — Software Engineering",
+  "Computer Science — Data & Databases",
+  "Computer Science — Networks & Security",
+  "Computer Science — General",
+  "Mathematics — Algebra & Number Theory",
+  "Mathematics — Analysis",
+  "Mathematics — Geometry & Topology",
+  "Mathematics — Probability & Statistics",
+  "Mathematics — Applied & Computational",
+  "Mathematics — Logic & Foundations",
+  "Mathematics — General",
+  "Physics — Classical Mechanics",
+  "Physics — Quantum Mechanics",
+  "Physics — Relativity & Gravitation",
+  "Physics — Electromagnetism",
+  "Physics — Thermodynamics & Statistical Mechanics",
+  "Physics — Condensed Matter",
+  "Physics — Optics & Photonics",
+  "Physics — Particle & Nuclear Physics",
+  "Physics — Astrophysics & Cosmology",
+  "Physics — General",
+  "STEM — To classify",
 ];
 
 const palette = ["#a64b45", "#cd725c", "#edb458", "#568f78", "#657994", "#7d5a68"];
@@ -64,7 +83,7 @@ export default function Home() {
   const [subtitle, setSubtitle] = useState("");
   const [author, setAuthor] = useState("");
   const [series, setSeries] = useState("");
-  const [category, setCategory] = useState("Science fiction");
+  const [category, setCategory] = useState("STEM — To classify");
   const [isbn, setIsbn] = useState("");
   const [isbn10, setIsbn10] = useState("");
   const [isbn13, setIsbn13] = useState("");
@@ -128,7 +147,7 @@ export default function Home() {
     setTitle(book.title || "");
     setSubtitle(book.subtitle || "");
     setAuthor(book.author || "");
-    setCategory(book.category || "Literary fiction");
+    setCategory(book.category || "STEM — To classify");
     setIsbn(book.isbn || book.isbn13 || book.isbn10 || "");
     setIsbn10(book.isbn10 || "");
     setIsbn13(book.isbn13 || "");
@@ -276,7 +295,7 @@ export default function Home() {
     setSubtitle("");
     setAuthor("");
     setSeries("");
-    setCategory("Science fiction");
+    setCategory("STEM — To classify");
     setIsbn("");
     setIsbn10("");
     setIsbn13("");
@@ -374,7 +393,7 @@ export default function Home() {
               <label>Author<input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author name" required /></label>
               <div className="form-row">
                 <label>ISBN<input value={isbn} onChange={(e) => setIsbn(e.target.value)} placeholder="ISBN-10 or ISBN-13" /></label>
-                <label>Section<select value={category} onChange={(e) => setCategory(e.target.value)}><option>Science fiction</option><option>Fantasy</option><option>Literary fiction</option><option>Mystery</option><option>History</option><option>Biography</option><option>Art & design</option></select></label>
+                <label>Section<select value={category} onChange={(e) => setCategory(e.target.value)}>{stemSections.map((section) => <option key={section}>{section}</option>)}</select></label>
               </div>
               <div className="form-row">
                 <label>Publisher<input value={publisher} onChange={(e) => setPublisher(e.target.value)} placeholder="Publisher" /></label>

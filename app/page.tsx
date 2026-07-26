@@ -270,13 +270,44 @@ export default function Home() {
     return candidates.map((candidate) => candidate.replace(/[^0-9X]/gi, "")).find((candidate) => candidate.length === 10 || candidate.length === 13);
   }
 
+  async function normalizePhoto(file: File) {
+    const bitmap = await createImageBitmap(file);
+    const maxDimension = 1800;
+    const initialScale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    let width = Math.max(1, Math.round(bitmap.width * initialScale));
+    let height = Math.max(1, Math.round(bitmap.height * initialScale));
+    let quality = .82;
+    let blob: Blob | null = null;
+    const targetBytes = 380_000;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("This browser could not prepare the images.");
+      context.drawImage(bitmap, 0, 0, width, height);
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (blob && blob.size <= targetBytes) break;
+      quality = Math.max(.55, quality - .08);
+      if (attempt >= 3) {
+        width = Math.max(900, Math.round(width * .86));
+        height = Math.max(900, Math.round(height * .86));
+      }
+    }
+    bitmap.close();
+    if (!blob) throw new Error("This browser could not prepare the images.");
+    const stem = file.name.replace(/\.[^.]+$/, "") || "book-cover";
+    return new File([blob], `${stem}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
+  }
+
   async function recognizePhoto(file: File, preview: string, scanId: number) {
     let isbnDetected = false;
     setScanError("");
     updateScanPhase(scanId, "Looking for an ISBN barcode…");
     try {
-      const { BrowserMultiFormatReader } = await import("@zxing/browser");
-      const result = await new BrowserMultiFormatReader().decodeFromImageUrl(preview);
+      const { BrowserMultiFormatOneDReader } = await import("@zxing/browser");
+      const result = await new BrowserMultiFormatOneDReader().decodeFromImageUrl(preview);
       const detected = isbnFromText(result.getText());
       if (detected) {
         isbnDetected = true;
@@ -349,15 +380,25 @@ export default function Home() {
     setMetadataSource("");
     setRecognitionMethod("");
     setRecognitionConfidence(0);
-    const candidates = files.map((file) => ({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) }));
+    setAssignmentStatus("scanning");
+    setStatus("review");
+    setScanError("");
+    setScanPhase("Preparing both images for reading and storage…");
+    let preparedFiles: File[];
+    try {
+      preparedFiles = await Promise.all(files.map(normalizePhoto));
+    } catch (error) {
+      setAssignmentStatus("idle");
+      setScanPhase("");
+      setScanError(error instanceof Error ? error.message : "The images could not be prepared.");
+      return;
+    }
+    const candidates = preparedFiles.map((file) => ({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) }));
     setPhotoCandidates(candidates);
     setFront(undefined);
     setBack(undefined);
     setFrontFile(undefined);
     setBackFile(undefined);
-    setAssignmentStatus("scanning");
-    setStatus("review");
-    setScanError("");
     const scanIds = candidates.map(() => ++nextScanId.current);
     latestScanId.current = scanIds[scanIds.length - 1];
     const isbnResults = await Promise.all(candidates.map((candidate, index) =>

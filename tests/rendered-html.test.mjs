@@ -40,6 +40,9 @@ test("classifies a two-image upload and supports manual correction", async () =>
   assert.match(page, /manuallyAssign/);
   assert.match(page, /Flip front &amp; back/);
   assert.match(page, /The other image will be assigned automatically/);
+  assert.match(page, /targetBytes = 380_000/);
+  assert.match(page, /normalizePhoto/);
+  assert.match(page, /BrowserMultiFormatOneDReader/);
   assert.match(css, /\.side-choices/);
   assert.match(css, /\.assignment-warning/);
 });

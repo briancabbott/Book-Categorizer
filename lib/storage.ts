@@ -1,8 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteCommand, DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { BookInput, BookRecord, BookStorage, ImageInput, StoredImage } from "./storage-types";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), ".data");
@@ -68,6 +68,14 @@ function localStorage(): BookStorage {
       ]);
       return book;
     },
+    async deleteBook(id) {
+      const store = await localStore();
+      const remaining = store.books.filter((book) => book.id !== id);
+      if (remaining.length === store.books.length) return false;
+      await writeLocalBooks(remaining);
+      await rm(path.join(dataDir, "images", id), { recursive: true, force: true });
+      return true;
+    },
     async getImage(id, side) {
       try {
         const [body, metadata] = await Promise.all([
@@ -102,6 +110,18 @@ function awsStorage(): BookStorage {
         ...(images.back ? [s3.send(new PutObjectCommand({ Bucket: bucketName, Key: `books/${id}/back`, Body: images.back.bytes, ContentType: images.back.contentType }))] : []),
       ]);
       return book;
+    },
+    async deleteBook(id) {
+      const response = await document.send(new DeleteCommand({
+        TableName: tableName,
+        Key: { id },
+        ReturnValues: "ALL_OLD",
+      }));
+      await Promise.all([
+        s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: `books/${id}/front` })),
+        s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: `books/${id}/back` })),
+      ]);
+      return Boolean(response.Attributes);
     },
     async getImage(id, side) {
       try {

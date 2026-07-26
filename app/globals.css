@@ -131,7 +131,7 @@ footer button { margin-left: auto; font-size: 12px; font-weight: 700; }
 .empty-collection p { color: #76827c; line-height: 1.6; }
 .empty-collection .primary { width: 210px; margin-top: 18px; }
 .library-table { background: var(--paper); border: 1px solid var(--line); box-shadow: 0 18px 60px rgba(62,48,29,.05); }
-.library-columns, .library-row { display: grid; grid-template-columns: minmax(240px, 1.5fr) minmax(220px, 1.2fr) 130px 170px; }
+.library-columns, .library-row { display: grid; grid-template-columns: minmax(240px, 1.5fr) minmax(220px, 1.2fr) 120px 160px 100px; }
 .library-columns { padding: 13px 24px; background: #e9e2d4; color: #69756f; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
 .discipline-bar { margin-top: 26px; padding: 14px 24px; background: var(--ink); color: white; font: 700 20px var(--font-serif); letter-spacing: .01em; }
 .catalog-group:first-of-type .discipline-bar { margin-top: 0; }
@@ -140,9 +140,14 @@ footer button { margin-left: auto; font-size: 12px; font-weight: 700; }
 .subsection-bar small { opacity: .8; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .library-row { min-height: 66px; border-bottom: 1px solid #e5ded1; }
 .library-row > span { display: flex; flex-direction: column; justify-content: center; padding: 13px 24px; border-right: 1px solid #ebe4d8; color: #586a63; font-size: 12px; line-height: 1.45; }
-.library-row > span:last-child { border-right: 0; font-variant-numeric: tabular-nums; }
+.library-row > span:nth-child(4) { font-variant-numeric: tabular-nums; }
+.library-row > span:last-child { border-right: 0; }
 .library-row strong { color: var(--ink); font: 600 16px var(--font-serif); }
 .library-row small { margin-top: 3px; color: #83908a; }
+.delete-book { padding: 8px 10px; border: 1px solid #c68d83; background: transparent; color: #9b4437; cursor: pointer; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.delete-book:hover { background: #9b4437; color: white; }
+.delete-book:disabled { cursor: wait; opacity: .55; }
+.library-error { margin: -28px 0 24px; padding: 12px 14px; background: #f6e3dc; border-left: 3px solid #9b4437; color: #8c3d31; font-size: 12px; }
 .shelf-stack { display: grid; gap: 64px; }
 .shelf-run { position: relative; padding-top: 30px; }
 .shelf-run .spines { min-width: 0; height: 285px; }

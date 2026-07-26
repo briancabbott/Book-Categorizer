@@ -5,6 +5,7 @@ import test from "node:test";
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const cssUrl = new URL("../app/globals.css", import.meta.url);
 const recognitionUrl = new URL("../app/api/books/recognize/route.ts", import.meta.url);
+const booksApiUrl = new URL("../app/api/books/route.ts", import.meta.url);
 
 test("provides all four Librarian workspaces", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -49,4 +50,18 @@ test("classifies a two-image upload and supports manual correction", async () =>
   assert.match(css, /\.assignment-warning/);
   assert.match(recognition, /matched:\s*false/);
   assert.doesNotMatch(recognition, /status:\s*404/);
+});
+
+test("deletes library entries and their related data", async () => {
+  const [page, api, css] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(booksApiUrl, "utf8"),
+    readFile(cssUrl, "utf8"),
+  ]);
+  assert.match(page, /Delete “\$\{book\.title\}” from your library/);
+  assert.match(page, /method:\s*"DELETE"/);
+  assert.match(page, /bookIds:\s*goal\.bookIds\.filter/);
+  assert.match(api, /export async function DELETE/);
+  assert.match(api, /storage\.deleteBook/);
+  assert.match(css, /\.delete-book/);
 });

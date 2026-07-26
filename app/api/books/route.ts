@@ -61,3 +61,19 @@ export async function POST(request: Request) {
     }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const id = new URL(request.url).searchParams.get("id")?.trim();
+    if (!id) return Response.json({ error: "A book id is required." }, { status: 422 });
+    const deleted = await storage.deleteBook(id);
+    if (!deleted) return Response.json({ error: "Book not found." }, { status: 404 });
+    return Response.json({ deleted: true, id });
+  } catch (error) {
+    console.error("Unable to delete book", error);
+    return Response.json({
+      error: "Unable to delete the book.",
+      ...(process.env.NODE_ENV === "development" ? { detail: error instanceof Error ? error.message : String(error) } : {}),
+    }, { status: 500 });
+  }
+}

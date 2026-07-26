@@ -126,6 +126,8 @@ export default function Home() {
   const [scanError, setScanError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingBookId, setDeletingBookId] = useState<string>();
+  const [libraryError, setLibraryError] = useState("");
   const [status, setStatus] = useState<"idle" | "review" | "placed">("idle");
   const [placedBook, setPlacedBook] = useState<Book>();
   const [shelfCapacity, setShelfCapacity] = useState(10);
@@ -553,6 +555,26 @@ export default function Home() {
     reader.readAsDataURL(file);
   }
 
+  async function deleteBook(book: Book) {
+    if (!window.confirm(`Delete “${book.title}” from your library? This also removes its stored cover images.`)) return;
+    setDeletingBookId(book.id);
+    setLibraryError("");
+    try {
+      const response = await fetch(`/api/books?id=${encodeURIComponent(book.id)}`, { method: "DELETE" });
+      const result = await response.json() as { error?: string; detail?: string };
+      if (!response.ok) throw new Error(result.detail || result.error || "The book could not be deleted.");
+      setBooks((current) => current.filter((entry) => entry.id !== book.id));
+      setReadingGoals((current) => current.map((goal) => ({
+        ...goal,
+        bookIds: goal.bookIds.filter((id) => id !== book.id),
+      })));
+    } catch (error) {
+      setLibraryError(error instanceof Error ? error.message : "The book could not be deleted.");
+    } finally {
+      setDeletingBookId(undefined);
+    }
+  }
+
   const hasDraft = Boolean(photoCandidates.length || title || author || scanPhase);
 
   return (
@@ -688,11 +710,12 @@ export default function Home() {
       {view === "library" && (
         <section className="library-view">
           <ViewHeading eyebrow="Catalog" title="My Library" detail={`${books.length} books · ${libraryGroups.length} technical sections`} />
+          {libraryError && <p className="library-error">{libraryError}</p>}
           {!books.length ? <EmptyCollection onAdd={() => setView("add")} /> : (
             <div className="library-table" role="table" aria-label="Technical library catalog">
               <div className="library-columns" role="row">
                 <strong role="columnheader">Title</strong><strong role="columnheader">Authors</strong>
-                <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong>
+                <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong><strong role="columnheader">Actions</strong>
               </div>
               {libraryGroups.map(([section, sectionBooks], index) => {
                 const [discipline, subsection = "General"] = section.split(" — ");
@@ -704,6 +727,8 @@ export default function Home() {
                     <span role="cell"><strong>{book.title}</strong>{book.subtitle && <small>{book.subtitle}</small>}</span>
                     <span role="cell">{book.author}</span><span role="cell">{book.publishedDate || "—"}</span>
                     <span role="cell">{book.isbn13 || book.isbn10 || book.isbn || "—"}</span>
+                    <span role="cell"><button className="delete-book" type="button" disabled={deletingBookId === book.id} onClick={() => deleteBook(book)}>
+                      {deletingBookId === book.id ? "Deleting…" : "Delete"}</button></span>
                   </div>)}
                 </div>;
               })}

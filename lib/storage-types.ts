@@ -37,5 +37,6 @@ export type StoredImage = {
 export interface BookStorage {
   listBooks(): Promise<BookRecord[]>;
   createBook(input: BookInput, images: { front?: ImageInput; back?: ImageInput }): Promise<BookRecord>;
+  deleteBook(id: string): Promise<boolean>;
   getImage(id: string, side: "front" | "back"): Promise<StoredImage | null>;
 }

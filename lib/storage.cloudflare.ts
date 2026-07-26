@@ -92,6 +92,17 @@ export const storage: BookStorage = {
     return { ...input, id, createdAt, cover: frontKey ? `/api/books/image/${id}/front` : undefined };
   },
 
+  async deleteBook(id) {
+    const { DB, BOOK_IMAGES } = runtime();
+    await prepareDatabase(DB);
+    const result = await DB.prepare("DELETE FROM books WHERE id = ?").bind(id).run();
+    await Promise.all([
+      BOOK_IMAGES.delete(`books/${id}/front`),
+      BOOK_IMAGES.delete(`books/${id}/back`),
+    ]);
+    return Boolean(result.meta.changes);
+  },
+
   async getImage(id, side) {
     const object = await runtime().BOOK_IMAGES.get(`books/${id}/${side}`);
     if (!object) return null;

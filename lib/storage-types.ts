@@ -15,6 +15,11 @@ export type BookRecord = {
   pageCount: number | null;
   wordCount: number | null;
   wordCountSource: string;
+  densityWordsPerPage: number | null;
+  densitySampleSize: number;
+  densityConfidence: number;
+  densityAnalyzedAt: number | null;
+  densityMethod: string;
   language: string;
   metadataSource: string;
   recognitionMethod: string;
@@ -41,6 +46,10 @@ export interface BookStorage {
   listBooks(): Promise<BookRecord[]>;
   createBook(input: BookInput, images: { front?: ImageInput; back?: ImageInput }): Promise<BookRecord>;
   updateExternalCover(id: string, externalCoverUrl: string): Promise<boolean>;
+  updateDensityMetrics(id: string, metrics: {
+    wordCount: number; wordCountSource: string; densityWordsPerPage: number;
+    densitySampleSize: number; densityConfidence: number; densityAnalyzedAt: number; densityMethod: string;
+  }): Promise<boolean>;
   deleteBook(id: string): Promise<boolean>;
   getImage(id: string, side: "front" | "back"): Promise<StoredImage | null>;
 }

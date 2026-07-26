@@ -41,6 +41,8 @@ test("classifies a two-image upload and supports manual correction", async () =>
   assert.match(page, /multiple onChange=\{choosePhotos\}/);
   assert.match(page, /isbnIndexes\.length === 1/);
   assert.match(page, /manuallyAssign/);
+  assert.match(page, /recognizePhoto\(selectedBack\.file, selectedBack\.preview, scanId, true\)/);
+  assert.match(page, /Rechecking the selected back cover for its ISBN/);
   assert.match(page, /Flip front &amp; back/);
   assert.match(page, /The other image will be assigned automatically/);
   assert.match(page, /targetBytes = 380_000/);

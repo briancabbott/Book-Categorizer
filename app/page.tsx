@@ -307,7 +307,7 @@ export default function Home() {
     return new File([blob], `${stem}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
   }
 
-  async function recognizePhoto(file: File, preview: string, scanId: number) {
+  async function recognizePhoto(file: File, preview: string, scanId: number, isbnOnly = false) {
     let isbnDetected = false;
     setScanError("");
     updateScanPhase(scanId, "Looking for an ISBN barcode…");
@@ -335,6 +335,10 @@ export default function Home() {
       const text = result.data.text.trim();
       const printedIsbn = isbnFromText(text);
       isbnDetected = Boolean(printedIsbn);
+      if (isbnOnly && !printedIsbn) {
+        updateScanPhase(scanId, "");
+        return false;
+      }
       await queryBook(printedIsbn
         ? { isbn: printedIsbn, text, method: "printed-isbn" }
         : { text, method: "title-author" }, scanId);
@@ -421,8 +425,19 @@ export default function Home() {
     }
   }
 
-  function manuallyAssign(candidateIndex: number, side: "front" | "back") {
-    applyPhotoAssignments(photoCandidates, side === "back" ? candidateIndex : candidateIndex === 0 ? 1 : 0, "manual");
+  async function manuallyAssign(candidateIndex: number, side: "front" | "back") {
+    const backIndex = side === "back" ? candidateIndex : candidateIndex === 0 ? 1 : 0;
+    applyPhotoAssignments(photoCandidates, backIndex, "manual");
+    const selectedBack = photoCandidates[backIndex];
+    const scanId = ++nextScanId.current;
+    latestScanId.current = scanId;
+    setScanError("");
+    setScanPhase("Rechecking the selected back cover for its ISBN…");
+    const foundIsbn = await recognizePhoto(selectedBack.file, selectedBack.preview, scanId, true);
+    if (!foundIsbn) {
+      setScanPhase("");
+      setScanError("The selected back cover is set, but Librarian still could not read an ISBN. You can review or enter the details manually.");
+    }
   }
 
   function flipPhotos() {

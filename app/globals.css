@@ -181,6 +181,14 @@ footer button { margin-left: auto; font-size: 12px; font-weight: 700; }
 .goal-books > div { display: grid; gap: 3px; max-width: 260px; padding: 10px 14px; background: white; border-left: 5px solid; }
 .goal-books strong { font: 600 14px var(--font-serif); }
 .goal-books small { color: #7a8781; font-size: 9px; }
+.pace-card { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 0 0 20px; background: var(--line); border: 1px solid var(--line); }
+.pace-card > div { display: grid; gap: 7px; padding: 14px; background: #f4ead9; }
+.pace-card.on-target > div { background: #e5efe7; }
+.pace-card small { color: #7a8781; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.pace-card strong { font-size: 12px; line-height: 1.35; }
+.progress-composer { display: grid; grid-template-columns: 1fr 160px 120px; gap: 9px; margin-bottom: 18px; }
+.progress-composer select, .progress-composer input, .progress-composer button { min-width: 0; padding: 10px; border: 1px solid var(--line); background: white; }
+.progress-composer button { background: var(--ink); color: white; cursor: pointer; font-weight: 700; }
 .note-composer { padding: 20px; background: #eee7da; }
 .note-composer textarea { min-height: 105px; resize: vertical; }
 .note-composer > div { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
@@ -211,6 +219,8 @@ footer button { margin-left: auto; font-size: 12px; font-weight: 700; }
   .goal-creator { grid-template-columns: 1fr; padding: 24px; }
   .goal-creator > .primary { grid-column: auto; margin-left: 0; }
   .goal-card { padding: 24px; }
+  .pace-card { grid-template-columns: 1fr 1fr; }
+  .progress-composer { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .photo-grid, .form-row { grid-template-columns: 1fr; }

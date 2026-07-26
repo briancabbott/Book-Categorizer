@@ -69,6 +69,8 @@ export async function POST(request: Request) {
     publishedDate: text(form, "publishedDate"),
     description: text(form, "description"),
     pageCount: Number(form.get("pageCount") || 0) || null,
+    wordCount: Number(form.get("wordCount") || 0) || null,
+    wordCountSource: text(form, "wordCountSource"),
     language: text(form, "language"),
     metadataSource: text(form, "metadataSource"),
     recognitionMethod: text(form, "recognitionMethod"),

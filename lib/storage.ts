@@ -7,7 +7,7 @@ import type { BookInput, BookRecord, BookStorage, ImageInput, StoredImage } from
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), ".data");
 const booksFile = path.join(dataDir, "books.json");
-const localSchemaVersion = 2;
+const localSchemaVersion = 3;
 
 type LocalStore = { schemaVersion: number; books: BookRecord[] };
 
@@ -38,7 +38,25 @@ async function localStore(): Promise<LocalStore> {
     await writeFile(path.join(dataDir, "books.pre-migration-v1.json"), source, { flag: "wx" }).catch(() => {});
     const migrated = {
       schemaVersion: localSchemaVersion,
-      books: (parsed.books || []).map((book) => ({ ...book, externalCoverUrl: book.externalCoverUrl || "" })),
+      books: (parsed.books || []).map((book) => ({
+        ...book,
+        externalCoverUrl: book.externalCoverUrl || "",
+        wordCount: book.wordCount || (book.pageCount ? book.pageCount * 450 : null),
+        wordCountSource: book.wordCountSource || (book.pageCount ? "estimated" : ""),
+      })),
+    };
+    await writeLocalStore(migrated);
+    return migrated;
+  }
+  if (parsed.schemaVersion < 3) {
+    await writeFile(path.join(dataDir, "books.pre-migration-v2.json"), source, { flag: "wx" }).catch(() => {});
+    const migrated = {
+      schemaVersion: localSchemaVersion,
+      books: parsed.books.map((book) => ({
+        ...book,
+        wordCount: book.wordCount || (book.pageCount ? book.pageCount * 450 : null),
+        wordCountSource: book.wordCountSource || (book.pageCount ? "estimated" : ""),
+      })),
     };
     await writeLocalStore(migrated);
     return migrated;

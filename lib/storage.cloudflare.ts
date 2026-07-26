@@ -35,6 +35,8 @@ async function prepareDatabase(db: D1Database) {
     ["published_date", "published_date TEXT"],
     ["description", "description TEXT"],
     ["page_count", "page_count INTEGER"],
+    ["word_count", "word_count INTEGER"],
+    ["word_count_source", "word_count_source TEXT"],
     ["language", "language TEXT"],
     ["metadata_source", "metadata_source TEXT"],
     ["recognition_method", "recognition_method TEXT"],
@@ -47,11 +49,16 @@ async function prepareDatabase(db: D1Database) {
   for (const [name, definition] of additions) {
     if (!existing.has(name)) await db.prepare(`ALTER TABLE books ADD COLUMN ${definition}`).run();
   }
+  await db.prepare(`UPDATE books SET word_count = page_count * 450,
+    word_count_source = 'estimated'
+    WHERE word_count IS NULL AND page_count IS NOT NULL`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS books_sort_idx ON books(category, author, series, title)").run();
   await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
     (version, name, applied_at) VALUES (3, 'durable additive book schema', ?)`).bind(Date.now()).run();
   await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
     (version, name, applied_at) VALUES (4, 'external online cover URLs', ?)`).bind(Date.now()).run();
+  await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
+    (version, name, applied_at) VALUES (5, 'page and word reading metrics', ?)`).bind(Date.now()).run();
 }
 
 const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
@@ -59,6 +66,7 @@ const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
   COALESCE(isbn10, '') AS isbn10, COALESCE(isbn13, '') AS isbn13,
   COALESCE(publisher, '') AS publisher, COALESCE(published_date, '') AS publishedDate,
   COALESCE(description, '') AS description, page_count AS pageCount,
+  word_count AS wordCount, COALESCE(word_count_source, '') AS wordCountSource,
   COALESCE(language, '') AS language, COALESCE(metadata_source, '') AS metadataSource,
   COALESCE(recognition_method, '') AS recognitionMethod,
   COALESCE(recognition_confidence, 0) AS recognitionConfidence, created_at AS createdAt,
@@ -85,12 +93,12 @@ export const storage: BookStorage = {
     if (images.back) await BOOK_IMAGES.put(backKey!, images.back.bytes, { httpMetadata: { contentType: images.back.contentType } });
     await DB.prepare(`INSERT INTO books (
       id, title, subtitle, author, series, category, color, isbn, isbn10, isbn13,
-      publisher, published_date, description, page_count, language, metadata_source,
+      publisher, published_date, description, page_count, word_count, word_count_source, language, metadata_source,
       recognition_method, recognition_confidence, external_cover_url, front_image_key, back_image_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       id, input.title, input.subtitle, input.author, input.series, input.category, input.color,
       input.isbn, input.isbn10, input.isbn13, input.publisher, input.publishedDate,
-      input.description, input.pageCount, input.language, input.metadataSource,
+      input.description, input.pageCount, input.wordCount, input.wordCountSource, input.language, input.metadataSource,
       input.recognitionMethod, input.recognitionConfidence, input.externalCoverUrl, frontKey, backKey, createdAt,
     ).run();
     return { ...input, id, createdAt, cover: frontKey ? `/api/books/image/${id}/front` : undefined };

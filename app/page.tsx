@@ -18,6 +18,8 @@ type Book = {
   publishedDate?: string;
   description?: string;
   pageCount?: number | null;
+  wordCount?: number | null;
+  wordCountSource?: string;
   language?: string;
   metadataSource?: string;
   recognitionMethod?: string;
@@ -58,6 +60,9 @@ type ReadingGoal = {
   description: string;
   bookIds: string[];
   notes: ReadingNote[];
+  createdAt: number;
+  targetDate: string;
+  progress: Array<{ id: string; bookId: string; pagesRead: number; createdAt: number }>;
 };
 
 const starterBooks: Book[] = [];
@@ -119,6 +124,8 @@ export default function Home() {
   const [publishedDate, setPublishedDate] = useState("");
   const [description, setDescription] = useState("");
   const [pageCount, setPageCount] = useState<number | null>(null);
+  const [wordCount, setWordCount] = useState<number | null>(null);
+  const [wordCountSource, setWordCountSource] = useState("");
   const [language, setLanguage] = useState("");
   const [metadataSource, setMetadataSource] = useState("");
   const [recognitionMethod, setRecognitionMethod] = useState("");
@@ -137,6 +144,8 @@ export default function Home() {
   const [goalTitle, setGoalTitle] = useState("");
   const [goalDescription, setGoalDescription] = useState("");
   const [goalBookIds, setGoalBookIds] = useState<string[]>([]);
+  const [goalTargetDate, setGoalTargetDate] = useState("");
+  const [progressDrafts, setProgressDrafts] = useState<Record<string, { bookId: string; pages: string }>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [listeningGoal, setListeningGoal] = useState<string>();
   const nextScanId = useRef(0);
@@ -153,7 +162,12 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("librarian-reading-goals");
-      if (saved) setReadingGoals(JSON.parse(saved) as ReadingGoal[]);
+      if (saved) setReadingGoals((JSON.parse(saved) as ReadingGoal[]).map((goal) => ({
+        ...goal,
+        createdAt: goal.createdAt || Date.now(),
+        targetDate: goal.targetDate || "",
+        progress: goal.progress || [],
+      })));
     } catch {
       // A damaged browser entry should not prevent the library from loading.
     }
@@ -198,12 +212,14 @@ export default function Home() {
     publishedDate,
     description,
     pageCount,
+    wordCount,
+    wordCountSource,
     language,
     metadataSource,
     recognitionMethod,
     recognitionConfidence,
     externalCoverUrl,
-  }), [title, subtitle, author, series, category, front, isbn, isbn10, isbn13, publisher, publishedDate, description, pageCount, language, metadataSource, recognitionMethod, recognitionConfidence, externalCoverUrl]);
+  }), [title, subtitle, author, series, category, front, isbn, isbn10, isbn13, publisher, publishedDate, description, pageCount, wordCount, wordCountSource, language, metadataSource, recognitionMethod, recognitionConfidence, externalCoverUrl]);
 
   const position = useMemo(() => {
     const all = [...ordered, proposed].sort(bookSort);
@@ -227,6 +243,8 @@ export default function Home() {
     setPublishedDate(book.publishedDate || "");
     setDescription(book.description || "");
     setPageCount(book.pageCount || null);
+    setWordCount(book.wordCount || (book.pageCount ? book.pageCount * 450 : null));
+    setWordCountSource(book.wordCountSource || (book.pageCount ? "estimated" : ""));
     setLanguage(book.language || "");
     setMetadataSource(book.metadataSource || "");
     setRecognitionMethod(book.recognitionMethod || "");
@@ -386,6 +404,8 @@ export default function Home() {
     setPublishedDate("");
     setDescription("");
     setPageCount(null);
+    setWordCount(null);
+    setWordCountSource("");
     setLanguage("");
     setMetadataSource("");
     setRecognitionMethod("");
@@ -462,6 +482,8 @@ export default function Home() {
     data.set("publishedDate", book.publishedDate || "");
     data.set("description", book.description || "");
     data.set("pageCount", String(book.pageCount || ""));
+    data.set("wordCount", String(book.wordCount || ""));
+    data.set("wordCountSource", book.wordCountSource || "");
     data.set("language", book.language || "");
     data.set("metadataSource", book.metadataSource || "");
     data.set("recognitionMethod", book.recognitionMethod || "");
@@ -507,6 +529,8 @@ export default function Home() {
     setPublishedDate("");
     setDescription("");
     setPageCount(null);
+    setWordCount(null);
+    setWordCountSource("");
     setLanguage("");
     setMetadataSource("");
     setRecognitionMethod("");
@@ -527,10 +551,14 @@ export default function Home() {
       description: goalDescription.trim(),
       bookIds: goalBookIds,
       notes: [],
+      createdAt: Date.now(),
+      targetDate: goalTargetDate,
+      progress: [],
     }]);
     setGoalTitle("");
     setGoalDescription("");
     setGoalBookIds([]);
+    setGoalTargetDate("");
   }
 
   function addNote(goalId: string, type: ReadingNote["type"], text: string, image?: string) {
@@ -576,6 +604,17 @@ export default function Home() {
     const reader = new FileReader();
     reader.onload = () => addNote(goalId, "image", file.name, String(reader.result || ""));
     reader.readAsDataURL(file);
+  }
+
+  function logReadingProgress(goalId: string) {
+    const draft = progressDrafts[goalId];
+    const pages = Number(draft?.pages || 0);
+    if (!draft?.bookId || pages <= 0) return;
+    setReadingGoals((current) => current.map((goal) => goal.id === goalId ? {
+      ...goal,
+      progress: [...goal.progress, { id: crypto.randomUUID(), bookId: draft.bookId, pagesRead: pages, createdAt: Date.now() }],
+    } : goal));
+    setProgressDrafts((current) => ({ ...current, [goalId]: { bookId: draft.bookId, pages: "" } }));
   }
 
   async function deleteBook(book: Book) {
@@ -705,7 +744,18 @@ export default function Home() {
                 <label>Publisher<input value={publisher} onChange={(e) => setPublisher(e.target.value)} placeholder="Publisher" /></label>
                 <label>Published<input value={publishedDate} onChange={(e) => setPublishedDate(e.target.value)} placeholder="Publication date" /></label>
               </div>
+              <div className="form-row">
+                <label>Page count<input type="number" min="1" value={pageCount || ""} onChange={(e) => {
+                  const pages = Number(e.target.value) || null;
+                  setPageCount(pages);
+                  if (pages && wordCountSource !== "manual") { setWordCount(pages * 450); setWordCountSource("estimated"); }
+                }} placeholder="Pages" /></label>
+                <label>Word count<input type="number" min="1" value={wordCount || ""} onChange={(e) => {
+                  setWordCount(Number(e.target.value) || null); setWordCountSource(e.target.value ? "manual" : "");
+                }} placeholder="Estimated if unavailable" /></label>
+              </div>
               <label>Series<input value={series} onChange={(e) => setSeries(e.target.value)} placeholder="Optional" /></label>
+              {pageCount && wordCount && <p className="metadata-note">{wordCount.toLocaleString()} words · {Math.round(wordCount / pageCount)} words/page · {wordCountSource}</p>}
               {(description || pageCount || language) && (
                 <p className="metadata-note">{[pageCount && `${pageCount} pages`, language?.toUpperCase(), publisher].filter(Boolean).join(" · ")}</p>
               )}
@@ -783,6 +833,7 @@ export default function Home() {
           <div className="goal-creator">
             <div><label>Learning goal<input value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="e.g. Master randomized algorithms" /></label>
               <label>What does success look like?<textarea value={goalDescription} onChange={(event) => setGoalDescription(event.target.value)} placeholder="Describe the concepts, problems, or outcome you are working toward." /></label></div>
+              <label>Target completion date<input type="date" value={goalTargetDate} onChange={(event) => setGoalTargetDate(event.target.value)} /></label>
             <fieldset><legend>Books for this goal</legend>
               {!ordered.length ? <p>Add books to your library first.</p> : ordered.map((book) =>
                 <label className="book-check" key={book.id}><input type="checkbox" checked={goalBookIds.includes(book.id)}
@@ -796,6 +847,17 @@ export default function Home() {
               <header><div><p className="eyebrow">Active goal</p><h2>{goal.title}</h2><p>{goal.description}</p></div><span>{goal.notes.length} notes</span></header>
               <div className="goal-books">{goal.bookIds.map((id) => books.find((book) => book.id === id)).filter(Boolean).map((book) =>
                 <div key={book!.id} style={{ borderColor: book!.color }}><strong>{book!.title}</strong><small>{book!.author}</small></div>)}</div>
+              <GoalPace goal={goal} books={books} />
+              <div className="progress-composer">
+                <select value={progressDrafts[goal.id]?.bookId || ""} onChange={(event) => setProgressDrafts((current) => ({
+                  ...current, [goal.id]: { bookId: event.target.value, pages: current[goal.id]?.pages || "" },
+                }))}><option value="">Choose a book</option>{goal.bookIds.map((id) => books.find((book) => book.id === id)).filter(Boolean).map((book) =>
+                  <option key={book!.id} value={book!.id}>{book!.title}</option>)}</select>
+                <input type="number" min="1" placeholder="Pages completed" value={progressDrafts[goal.id]?.pages || ""} onChange={(event) => setProgressDrafts((current) => ({
+                  ...current, [goal.id]: { bookId: current[goal.id]?.bookId || "", pages: event.target.value },
+                }))} />
+                <button onClick={() => logReadingProgress(goal.id)}>Log reading</button>
+              </div>
               <div className="note-composer">
                 <textarea value={noteDrafts[goal.id] || ""} onChange={(event) => setNoteDrafts((current) => ({ ...current, [goal.id]: event.target.value }))}
                   placeholder="Write a note, proof sketch, question, quotation, or connection…" />
@@ -816,6 +878,30 @@ export default function Home() {
       <footer><span>Librarian</span><p>Made for the pleasure of finding things again.</p><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Back to top ↑</button></footer>
     </main>
   );
+}
+
+function GoalPace({ goal, books }: { goal: ReadingGoal; books: Book[] }) {
+  const selected = goal.bookIds.map((id) => books.find((book) => book.id === id)).filter(Boolean) as Book[];
+  const totalWords = selected.reduce((sum, book) => sum + (book.wordCount || (book.pageCount || 0) * 450), 0);
+  const progressWords = goal.progress.reduce((sum, entry) => {
+    const book = books.find((item) => item.id === entry.bookId);
+    const density = book?.wordCount && book.pageCount ? book.wordCount / book.pageCount : 450;
+    return sum + entry.pagesRead * density;
+  }, 0);
+  const remainingWords = Math.max(0, totalWords - progressWords);
+  const elapsedDays = Math.max(1, (Date.now() - goal.createdAt) / 86_400_000);
+  const dailyRate = progressWords / elapsedDays;
+  const targetTime = goal.targetDate ? new Date(`${goal.targetDate}T23:59:59`).getTime() : 0;
+  const daysToTarget = targetTime ? Math.max(.01, (targetTime - Date.now()) / 86_400_000) : 0;
+  const requiredRate = daysToTarget ? remainingWords / daysToTarget : 0;
+  const projected = dailyRate > 0 ? new Date(Date.now() + remainingWords / dailyRate * 86_400_000) : undefined;
+  const onTarget = Boolean(targetTime && dailyRate > 0 && dailyRate >= requiredRate);
+  return <div className={`pace-card ${onTarget ? "on-target" : ""}`}>
+    <div><small>Book-set knowledge</small><strong>{Math.round(progressWords).toLocaleString()} / {Math.round(totalWords).toLocaleString()} words</strong></div>
+    <div><small>Effective daily rate</small><strong>{dailyRate ? `${Math.round(dailyRate).toLocaleString()} words/day` : "Log reading to establish"}</strong></div>
+    <div><small>Objective status</small><strong>{!targetTime ? "Set a target date" : !dailyRate ? "Rate not established" : onTarget ? "On target" : `${Math.round(requiredRate - dailyRate).toLocaleString()} words/day behind`}</strong></div>
+    <div><small>Projected completion</small><strong>{projected ? projected.toLocaleDateString() : "Pending reading data"}</strong></div>
+  </div>;
 }
 
 function ViewHeading({ eyebrow, title, detail }: { eyebrow: string; title: string; detail: string }) {

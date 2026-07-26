@@ -13,6 +13,8 @@ export type BookRecord = {
   publishedDate: string;
   description: string;
   pageCount: number | null;
+  wordCount: number | null;
+  wordCountSource: string;
   language: string;
   metadataSource: string;
   recognitionMethod: string;

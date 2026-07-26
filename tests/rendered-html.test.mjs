@@ -93,3 +93,19 @@ test("stores and displays online book cover URLs", async () => {
   assert.match(api, /updateExternalCover/);
   assert.match(css, /\.cover-cell/);
 });
+
+test("tracks book density and projects learning-goal pace", async () => {
+  const [page, api, css] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(booksApiUrl, "utf8"),
+    readFile(cssUrl, "utf8"),
+  ]);
+  assert.match(api, /wordCount:\s*Number/);
+  assert.match(page, /Word count/);
+  assert.match(page, /words\/page/);
+  assert.match(page, /function GoalPace/);
+  assert.match(page, /Effective daily rate/);
+  assert.match(page, /Projected completion/);
+  assert.match(page, /Log reading/);
+  assert.match(css, /\.pace-card/);
+});

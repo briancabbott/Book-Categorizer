@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Durable storage and least-privilege runtime policy for Book Categorizer
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: book-categorizer
+
+Resources:
+  BooksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${ResourcePrefix}-books
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  BookImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ResourcePrefix}-images-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  RuntimePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Book Categorizer access to its DynamoDB table and private image bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:Scan
+            Resource: !GetAtt BooksTable.Arn
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub ${BookImagesBucket.Arn}/books/*
+
+Outputs:
+  BooksTableName:
+    Value: !Ref BooksTable
+  BookImagesBucketName:
+    Value: !Ref BookImagesBucket
+  RuntimePolicyArn:
+    Value: !Ref RuntimePolicy

@@ -1,0 +1,41 @@
+export type BookRecord = {
+  id: string;
+  title: string;
+  subtitle: string;
+  author: string;
+  series: string;
+  category: string;
+  color: string;
+  isbn: string;
+  isbn10: string;
+  isbn13: string;
+  publisher: string;
+  publishedDate: string;
+  description: string;
+  pageCount: number | null;
+  language: string;
+  metadataSource: string;
+  recognitionMethod: string;
+  recognitionConfidence: number;
+  cover?: string;
+  createdAt: number;
+};
+
+export type BookInput = Omit<BookRecord, "id" | "cover" | "createdAt">;
+
+export type ImageInput = {
+  bytes: Uint8Array;
+  contentType: string;
+};
+
+export type StoredImage = {
+  body: ReadableStream<Uint8Array> | Uint8Array;
+  contentType: string;
+  etag?: string;
+};
+
+export interface BookStorage {
+  listBooks(): Promise<BookRecord[]>;
+  createBook(input: BookInput, images: { front?: ImageInput; back?: ImageInput }): Promise<BookRecord>;
+  getImage(id: string, side: "front" | "back"): Promise<StoredImage | null>;
+}

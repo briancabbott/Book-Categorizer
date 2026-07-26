@@ -9,11 +9,17 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
+    "dev:local": "next dev",
+    "build:node": "next build",
+    "start:node": "next start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1095.0",
+    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/lib-dynamodb": "^3.1095.0",
     "@zxing/browser": "^0.2.1",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",

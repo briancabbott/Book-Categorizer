@@ -35,6 +35,14 @@ type ScanCandidate = {
   priority: number;
 };
 
+type PhotoCandidate = {
+  id: string;
+  file: File;
+  preview: string;
+  side?: "front" | "back";
+  hasIsbn?: boolean;
+};
+
 type ReadingNote = {
   id: string;
   type: "typed" | "spoken" | "image";
@@ -96,6 +104,8 @@ export default function Home() {
   const [back, setBack] = useState<string>();
   const [frontFile, setFrontFile] = useState<File>();
   const [backFile, setBackFile] = useState<File>();
+  const [photoCandidates, setPhotoCandidates] = useState<PhotoCandidate[]>([]);
+  const [assignmentStatus, setAssignmentStatus] = useState<"idle" | "scanning" | "automatic" | "manual">("idle");
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -261,6 +271,7 @@ export default function Home() {
   }
 
   async function recognizePhoto(file: File, preview: string, scanId: number) {
+    let isbnDetected = false;
     setScanError("");
     updateScanPhase(scanId, "Looking for an ISBN barcode…");
     try {
@@ -268,8 +279,9 @@ export default function Home() {
       const result = await new BrowserMultiFormatReader().decodeFromImageUrl(preview);
       const detected = isbnFromText(result.getText());
       if (detected) {
+        isbnDetected = true;
         await queryBook({ isbn: detected, method: "barcode" }, scanId);
-        return;
+        return true;
       }
     } catch {
       // A missing barcode is expected for front covers and older editions.
@@ -285,9 +297,11 @@ export default function Home() {
       });
       const text = result.data.text.trim();
       const printedIsbn = isbnFromText(text);
+      isbnDetected = Boolean(printedIsbn);
       await queryBook(printedIsbn
         ? { isbn: printedIsbn, text, method: "printed-isbn" }
         : { text, method: "title-author" }, scanId);
+      return isbnDetected;
     } catch (error) {
       if (scanId === latestScanId.current) {
         setScanPhase("");
@@ -295,21 +309,77 @@ export default function Home() {
           setScanError(error instanceof Error ? error.message : "I couldn’t identify this edition. Try a clearer cover photo.");
         }
       }
+      return isbnDetected;
     }
   }
 
-  function choosePhoto(side: "front" | "back") {
-    return async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      const scanId = ++nextScanId.current;
-      latestScanId.current = scanId;
-      const preview = URL.createObjectURL(file);
-      if (side === "front") { setFront(preview); setFrontFile(file); }
-      else { setBack(preview); setBackFile(file); }
-      setStatus("review");
-      await recognizePhoto(file, preview, scanId);
-    };
+  function applyPhotoAssignments(candidates: PhotoCandidate[], backIndex: number, source: "automatic" | "manual") {
+    const assigned = candidates.map((candidate, index) => ({ ...candidate, side: index === backIndex ? "back" as const : "front" as const }));
+    const frontCandidate = assigned.find((candidate) => candidate.side === "front")!;
+    const backCandidate = assigned.find((candidate) => candidate.side === "back")!;
+    setPhotoCandidates(assigned);
+    setFront(frontCandidate.preview);
+    setFrontFile(frontCandidate.file);
+    setBack(backCandidate.preview);
+    setBackFile(backCandidate.file);
+    setAssignmentStatus(source);
+  }
+
+  async function choosePhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files || [])];
+    if (files.length !== 2) {
+      setScanError("Please choose exactly two images. Librarian needs both sides of the book.");
+      event.target.value = "";
+      return;
+    }
+    bestRecognition.current = undefined;
+    setTitle("");
+    setSubtitle("");
+    setAuthor("");
+    setSeries("");
+    setCategory("STEM — To classify");
+    setIsbn("");
+    setIsbn10("");
+    setIsbn13("");
+    setPublisher("");
+    setPublishedDate("");
+    setDescription("");
+    setPageCount(null);
+    setLanguage("");
+    setMetadataSource("");
+    setRecognitionMethod("");
+    setRecognitionConfidence(0);
+    const candidates = files.map((file) => ({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) }));
+    setPhotoCandidates(candidates);
+    setFront(undefined);
+    setBack(undefined);
+    setFrontFile(undefined);
+    setBackFile(undefined);
+    setAssignmentStatus("scanning");
+    setStatus("review");
+    setScanError("");
+    const scanIds = candidates.map(() => ++nextScanId.current);
+    latestScanId.current = scanIds[scanIds.length - 1];
+    const isbnResults = await Promise.all(candidates.map((candidate, index) =>
+      recognizePhoto(candidate.file, candidate.preview, scanIds[index])));
+    const inspected = candidates.map((candidate, index) => ({ ...candidate, hasIsbn: isbnResults[index] }));
+    const isbnIndexes = inspected.flatMap((candidate, index) => candidate.hasIsbn ? [index] : []);
+    if (isbnIndexes.length === 1) {
+      applyPhotoAssignments(inspected, isbnIndexes[0], "automatic");
+    } else {
+      setPhotoCandidates(inspected);
+      setAssignmentStatus("manual");
+      setScanPhase("");
+    }
+  }
+
+  function manuallyAssign(candidateIndex: number, side: "front" | "back") {
+    applyPhotoAssignments(photoCandidates, side === "back" ? candidateIndex : candidateIndex === 0 ? 1 : 0, "manual");
+  }
+
+  function flipPhotos() {
+    const backIndex = photoCandidates.findIndex((candidate) => candidate.side === "front");
+    if (backIndex >= 0) applyPhotoAssignments(photoCandidates, backIndex, "manual");
   }
 
   async function addBook() {
@@ -358,6 +428,8 @@ export default function Home() {
     setBack(undefined);
     setFrontFile(undefined);
     setBackFile(undefined);
+    setPhotoCandidates([]);
+    setAssignmentStatus("idle");
     setTitle("");
     setSubtitle("");
     setAuthor("");
@@ -440,7 +512,7 @@ export default function Home() {
     reader.readAsDataURL(file);
   }
 
-  const hasDraft = Boolean(front || back || title || author || scanPhase);
+  const hasDraft = Boolean(photoCandidates.length || title || author || scanPhase);
 
   return (
     <main>
@@ -476,19 +548,36 @@ export default function Home() {
         <div className="capture-panel">
           <div className="section-heading">
             <span>01</span>
-            <div><h2>Show me the book</h2><p>Front, back, or both. A clear photo works best.</p></div>
+            <div><h2>Show me the book</h2><p>Choose exactly two images. Librarian will determine which side is which.</p></div>
           </div>
-          <div className="photo-grid">
-            <label className={`photo-drop ${front ? "has-photo" : ""}`}>
-              {front ? <img src={front} alt="Front cover preview" /> : <><b>＋</b><strong>Front cover</strong><small>Tap to take or choose a photo</small></>}
-              <input type="file" accept="image/*" capture="environment" onChange={choosePhoto("front")} />
+          {!photoCandidates.length ? (
+            <label className="photo-drop paired-upload">
+              <b>＋</b><strong>Select two book images</strong><small>Choose the front and back together, in either order</small>
+              <input type="file" accept="image/*" multiple onChange={choosePhotos} />
             </label>
-            <label className={`photo-drop secondary ${back ? "has-photo" : ""}`}>
-              {back ? <img src={back} alt="Back cover preview" /> : <><b>＋</b><strong>Back cover</strong><small>Great for ISBN &amp; description</small></>}
-              <input type="file" accept="image/*" capture="environment" onChange={choosePhoto("back")} />
-            </label>
-          </div>
-          <p className="privacy-note">Barcode and cover text are read automatically. Photos stay private.</p>
+          ) : (
+            <>
+              <div className="photo-grid">
+                {photoCandidates.map((candidate, index) => <div className="photo-candidate" key={candidate.id}>
+                  <div className="candidate-image"><img src={candidate.preview} alt={`Uploaded book image ${index + 1}`} />
+                    {candidate.side && <span className={`side-label ${candidate.side}`}>{candidate.side}</span>}</div>
+                  {assignmentStatus === "manual" && !candidate.side && <div className="side-choices" aria-label={`Choose side for image ${index + 1}`}>
+                    <button onClick={() => manuallyAssign(index, "front")}>Front</button>
+                    <button onClick={() => manuallyAssign(index, "back")}>Back</button>
+                  </div>}
+                </div>)}
+              </div>
+              {assignmentStatus === "scanning" && <p className="assignment-note">Inspecting both images for an ISBN…</p>}
+              {assignmentStatus === "manual" && !front && <div className="assignment-warning"><strong>I couldn’t determine the sides confidently.</strong>
+                <span>Select Front or Back beneath either image. The other image will be assigned automatically.</span></div>}
+              {(assignmentStatus === "automatic" || (assignmentStatus === "manual" && front)) && <div className="assignment-result">
+                <span>{assignmentStatus === "automatic" ? "✓ Assigned from ISBN evidence" : "✓ Sides selected"}</span>
+                <button type="button" onClick={flipPhotos}>⇄ Flip front &amp; back</button>
+              </div>}
+              <label className="replace-photos">Choose two different images<input type="file" accept="image/*" multiple onChange={choosePhotos} /></label>
+            </>
+          )}
+          <p className="privacy-note">The image containing the ISBN becomes the back cover. Photos stay private.</p>
         </div>
 
         <div className="details-panel">
@@ -534,7 +623,7 @@ export default function Home() {
               {(description || pageCount || language) && (
                 <p className="metadata-note">{[pageCount && `${pageCount} pages`, language?.toUpperCase(), publisher].filter(Boolean).join(" · ")}</p>
               )}
-              <button className="primary" type="submit" disabled={saving}>{saving ? "Saving to your library…" : "Find its place"} <span>→</span></button>
+              <button className="primary" type="submit" disabled={saving || !front || !back}>{saving ? "Saving to your library…" : "Find its place"} <span>→</span></button>
             </form>
           )}
         </div>

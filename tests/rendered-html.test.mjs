@@ -29,3 +29,17 @@ test("supports a grouped technical catalog and multi-format reading notes", asyn
   assert.match(css, /\.shelf-stack/);
   assert.match(css, /\.notes-timeline/);
 });
+
+test("classifies a two-image upload and supports manual correction", async () => {
+  const [page, css] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(cssUrl, "utf8"),
+  ]);
+  assert.match(page, /multiple onChange=\{choosePhotos\}/);
+  assert.match(page, /isbnIndexes\.length === 1/);
+  assert.match(page, /manuallyAssign/);
+  assert.match(page, /Flip front &amp; back/);
+  assert.match(page, /The other image will be assigned automatically/);
+  assert.match(css, /\.side-choices/);
+  assert.match(css, /\.assignment-warning/);
+});

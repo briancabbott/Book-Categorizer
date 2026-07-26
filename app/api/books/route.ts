@@ -5,6 +5,35 @@ function text(form: FormData, key: string) {
   return String(form.get(key) || "");
 }
 
+function normalizedText(value: string) {
+  return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function canonicalIsbn(value: string) {
+  const isbn = value.toUpperCase().replace(/[^0-9X]/g, "");
+  if (isbn.length !== 10) return isbn.length === 13 ? isbn : "";
+  const base = `978${isbn.slice(0, 9)}`;
+  const sum = base.split("").reduce((total, digit, index) => total + Number(digit) * (index % 2 ? 3 : 1), 0);
+  return `${base}${(10 - (sum % 10)) % 10}`;
+}
+
+function isbnSet(book: { isbn?: string; isbn10?: string; isbn13?: string }) {
+  return new Set([book.isbn, book.isbn10, book.isbn13].map((value) => canonicalIsbn(value || "")).filter(Boolean));
+}
+
+function isDuplicate(
+  input: Pick<BookInput, "title" | "author" | "isbn" | "isbn10" | "isbn13">,
+  existing: Awaited<ReturnType<typeof storage.listBooks>>[number],
+) {
+  const incomingIsbns = isbnSet(input);
+  const existingIsbns = isbnSet(existing);
+  if (incomingIsbns.size && existingIsbns.size) {
+    return [...incomingIsbns].some((isbn) => existingIsbns.has(isbn));
+  }
+  return normalizedText(input.title) === normalizedText(existing.title) &&
+    normalizedText(input.author) === normalizedText(existing.author);
+}
+
 async function image(form: FormData, key: string): Promise<ImageInput | undefined> {
   const file = form.get(key);
   if (!(file instanceof File) || !file.size) return undefined;
@@ -48,6 +77,14 @@ export async function POST(request: Request) {
   if (!input.title || !input.author) {
     return Response.json({ error: "Title and author are required." }, { status: 422 });
   }
+    const duplicate = (await storage.listBooks()).find((book) => isDuplicate(input, book));
+    if (duplicate) {
+      return Response.json({
+        duplicate: true,
+        error: `“${duplicate.title}” is already in your library.`,
+        existingBookId: duplicate.id,
+      });
+    }
     const book = await storage.createBook(input, {
       front: await image(form, "front"),
       back: await image(form, "back"),

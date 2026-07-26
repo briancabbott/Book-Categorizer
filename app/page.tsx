@@ -452,8 +452,9 @@ export default function Home() {
     setSaveError("");
     try {
       const response = await fetch("/api/books", { method: "POST", body: data });
-      const result = await response.json() as Book & { error?: string; detail?: string };
+      const result = await response.json() as Book & { error?: string; detail?: string; duplicate?: boolean };
       if (!response.ok) throw new Error(result.detail || result.error || "The book could not be saved.");
+      if (result.duplicate) throw new Error(result.error || "This book is already in your library.");
       setBooks((current) => [...current, result]);
       setPlacedBook(result);
       setStatus("placed");

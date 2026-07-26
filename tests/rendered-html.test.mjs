@@ -65,3 +65,16 @@ test("deletes library entries and their related data", async () => {
   assert.match(api, /storage\.deleteBook/);
   assert.match(css, /\.delete-book/);
 });
+
+test("prevents duplicate database entries before storing images", async () => {
+  const [page, api] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(booksApiUrl, "utf8"),
+  ]);
+  assert.match(api, /function canonicalIsbn/);
+  assert.match(api, /function isDuplicate/);
+  assert.match(api, /storage\.listBooks\(\)\)\.find/);
+  assert.ok(api.indexOf("duplicate =") < api.indexOf("storage.createBook"));
+  assert.match(api, /duplicate:\s*true/);
+  assert.match(page, /result\.duplicate/);
+});

@@ -71,6 +71,11 @@ export async function POST(request: Request) {
     pageCount: Number(form.get("pageCount") || 0) || null,
     wordCount: Number(form.get("wordCount") || 0) || null,
     wordCountSource: text(form, "wordCountSource"),
+    densityWordsPerPage: null,
+    densitySampleSize: 0,
+    densityConfidence: 0,
+    densityAnalyzedAt: null,
+    densityMethod: "",
     language: text(form, "language"),
     metadataSource: text(form, "metadataSource"),
     recognitionMethod: text(form, "recognitionMethod"),
@@ -104,8 +109,20 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const body = await request.json() as { id?: string; externalCoverUrl?: string };
-    if (!body.id || !body.externalCoverUrl) return Response.json({ error: "Book id and cover URL are required." }, { status: 422 });
+    const body = await request.json() as {
+      id?: string; externalCoverUrl?: string;
+      densityMetrics?: {
+        wordCount: number; wordCountSource: string; densityWordsPerPage: number;
+        densitySampleSize: number; densityConfidence: number; densityAnalyzedAt: number; densityMethod: string;
+      };
+    };
+    if (!body.id) return Response.json({ error: "Book id is required." }, { status: 422 });
+    if (body.densityMetrics) {
+      const updated = await storage.updateDensityMetrics(body.id, body.densityMetrics);
+      if (!updated) return Response.json({ error: "Book not found." }, { status: 404 });
+      return Response.json({ updated: true, id: body.id, densityMetrics: body.densityMetrics });
+    }
+    if (!body.externalCoverUrl) return Response.json({ error: "A cover URL or density metrics are required." }, { status: 422 });
     const updated = await storage.updateExternalCover(body.id, body.externalCoverUrl);
     if (!updated) return Response.json({ error: "Book not found." }, { status: 404 });
     return Response.json({ updated: true, id: body.id, externalCoverUrl: body.externalCoverUrl });

@@ -20,6 +20,11 @@ type Book = {
   pageCount?: number | null;
   wordCount?: number | null;
   wordCountSource?: string;
+  densityWordsPerPage?: number | null;
+  densitySampleSize?: number;
+  densityConfidence?: number;
+  densityAnalyzedAt?: number | null;
+  densityMethod?: string;
   language?: string;
   metadataSource?: string;
   recognitionMethod?: string;
@@ -136,6 +141,8 @@ export default function Home() {
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingBookId, setDeletingBookId] = useState<string>();
+  const [analyzingBookId, setAnalyzingBookId] = useState<string>();
+  const [densityProgress, setDensityProgress] = useState("");
   const [libraryError, setLibraryError] = useState("");
   const [status, setStatus] = useState<"idle" | "review" | "placed">("idle");
   const [placedBook, setPlacedBook] = useState<Book>();
@@ -637,6 +644,61 @@ export default function Home() {
     }
   }
 
+  async function analyzeDensity(book: Book, files: FileList | null) {
+    const samples = Array.from(files || []);
+    if (!samples.length) return;
+    if (!book.pageCount) {
+      setLibraryError(`Add a page count for “${book.title}” before analyzing its density.`);
+      return;
+    }
+    setAnalyzingBookId(book.id);
+    setLibraryError("");
+    try {
+      const { recognize } = await import("tesseract.js");
+      const wordCounts: number[] = [];
+      for (let index = 0; index < samples.length; index += 1) {
+        setDensityProgress(`Reading sample ${index + 1} of ${samples.length}…`);
+        const result = await recognize(samples[index], "eng");
+        const count = result.data.text.match(/\b[\p{L}\p{N}][\p{L}\p{N}'’.-]*\b/gu)?.length || 0;
+        if (count >= 20) wordCounts.push(count);
+      }
+      if (!wordCounts.length) throw new Error("No sample contained enough readable text. Try clearer, tightly framed interior pages.");
+      const median = (values: number[]) => {
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+      };
+      const densityWordsPerPage = median(wordCounts);
+      const deviation = median(wordCounts.map((count) => Math.abs(count - densityWordsPerPage)));
+      const relativeDeviation = densityWordsPerPage ? deviation / densityWordsPerPage : 1;
+      const densityConfidence = Math.max(35, Math.min(95,
+        Math.round(45 + Math.min(wordCounts.length, 8) * 6 - Math.min(30, relativeDeviation * 50))));
+      const densityMetrics = {
+        wordCount: Math.round(densityWordsPerPage * book.pageCount),
+        wordCountSource: "sampled",
+        densityWordsPerPage,
+        densitySampleSize: wordCounts.length,
+        densityConfidence,
+        densityAnalyzedAt: Date.now(),
+        densityMethod: "transient-ocr-median-v1",
+      };
+      setDensityProgress("Saving aggregate density metrics…");
+      const response = await fetch("/api/books", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: book.id, densityMetrics }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Density metrics could not be saved.");
+      setBooks((current) => current.map((entry) => entry.id === book.id ? { ...entry, ...densityMetrics } : entry));
+    } catch (error) {
+      setLibraryError(error instanceof Error ? error.message : "Density analysis failed.");
+    } finally {
+      setAnalyzingBookId(undefined);
+      setDensityProgress("");
+    }
+  }
+
   const hasDraft = Boolean(photoCandidates.length || title || author || scanPhase);
 
   return (
@@ -788,7 +850,8 @@ export default function Home() {
             <div className="library-table" role="table" aria-label="Technical library catalog">
               <div className="library-columns" role="row">
                 <strong role="columnheader">Cover</strong><strong role="columnheader">Title</strong><strong role="columnheader">Authors</strong>
-                <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong><strong role="columnheader">Actions</strong>
+                <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong><strong role="columnheader">Density</strong>
+                <strong role="columnheader">Actions</strong>
               </div>
               {libraryGroups.map(([section, sectionBooks], index) => {
                 const [discipline, subsection = "General"] = section.split(" — ");
@@ -802,7 +865,20 @@ export default function Home() {
                     <span role="cell"><strong>{book.title}</strong>{book.subtitle && <small>{book.subtitle}</small>}</span>
                     <span role="cell">{book.author}</span><span role="cell">{book.publishedDate || "—"}</span>
                     <span role="cell">{book.isbn13 || book.isbn10 || book.isbn || "—"}</span>
-                    <span role="cell"><button className="delete-book" type="button" disabled={deletingBookId === book.id} onClick={() => deleteBook(book)}>
+                    <span role="cell" className="density-summary">{book.densityWordsPerPage ?
+                      <><strong>{Math.round(book.densityWordsPerPage)} words/page</strong>
+                        <small>{book.densitySampleSize} samples · {book.densityConfidence}% confidence</small></> :
+                      <small>Not analyzed</small>}</span>
+                    <span role="cell" className="library-actions">
+                      <label className={`density-upload ${analyzingBookId === book.id ? "disabled" : ""}`}>
+                        {analyzingBookId === book.id ? densityProgress || "Analyzing…" : "Analyze density"}
+                        <input type="file" accept="image/*" multiple disabled={Boolean(analyzingBookId)}
+                          onChange={(event) => {
+                            void analyzeDensity(book, event.target.files);
+                            event.target.value = "";
+                          }} />
+                      </label>
+                      <button className="delete-book" type="button" disabled={deletingBookId === book.id} onClick={() => deleteBook(book)}>
                       {deletingBookId === book.id ? "Deleting…" : "Delete"}</button></span>
                   </div>)}
                 </div>;

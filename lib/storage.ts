@@ -111,6 +111,14 @@ function localStorage(): BookStorage {
       await writeLocalBooks(store.books);
       return true;
     },
+    async updateDensityMetrics(id, metrics) {
+      const store = await localStore();
+      const book = store.books.find((entry) => entry.id === id);
+      if (!book) return false;
+      Object.assign(book, metrics);
+      await writeLocalBooks(store.books);
+      return true;
+    },
     async getImage(id, side) {
       try {
         const [body, metadata] = await Promise.all([
@@ -164,6 +172,24 @@ function awsStorage(): BookStorage {
         Key: { id },
         UpdateExpression: "SET externalCoverUrl = :url",
         ExpressionAttributeValues: { ":url": externalCoverUrl },
+        ReturnValues: "ALL_NEW",
+      }));
+      return Boolean(response.Attributes);
+    },
+    async updateDensityMetrics(id, metrics) {
+      const response = await document.send(new UpdateCommand({
+        TableName: tableName,
+        Key: { id },
+        UpdateExpression: `SET wordCount = :wordCount, wordCountSource = :source,
+          densityWordsPerPage = :density, densitySampleSize = :sampleSize,
+          densityConfidence = :confidence, densityAnalyzedAt = :analyzedAt,
+          densityMethod = :method`,
+        ExpressionAttributeValues: {
+          ":wordCount": metrics.wordCount, ":source": metrics.wordCountSource,
+          ":density": metrics.densityWordsPerPage, ":sampleSize": metrics.densitySampleSize,
+          ":confidence": metrics.densityConfidence, ":analyzedAt": metrics.densityAnalyzedAt,
+          ":method": metrics.densityMethod,
+        },
         ReturnValues: "ALL_NEW",
       }));
       return Boolean(response.Attributes);

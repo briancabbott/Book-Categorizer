@@ -37,6 +37,11 @@ async function prepareDatabase(db: D1Database) {
     ["page_count", "page_count INTEGER"],
     ["word_count", "word_count INTEGER"],
     ["word_count_source", "word_count_source TEXT"],
+    ["density_words_per_page", "density_words_per_page REAL"],
+    ["density_sample_size", "density_sample_size INTEGER"],
+    ["density_confidence", "density_confidence INTEGER"],
+    ["density_analyzed_at", "density_analyzed_at INTEGER"],
+    ["density_method", "density_method TEXT"],
     ["language", "language TEXT"],
     ["metadata_source", "metadata_source TEXT"],
     ["recognition_method", "recognition_method TEXT"],
@@ -59,6 +64,8 @@ async function prepareDatabase(db: D1Database) {
     (version, name, applied_at) VALUES (4, 'external online cover URLs', ?)`).bind(Date.now()).run();
   await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
     (version, name, applied_at) VALUES (5, 'page and word reading metrics', ?)`).bind(Date.now()).run();
+  await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
+    (version, name, applied_at) VALUES (6, 'transient density analysis aggregates', ?)`).bind(Date.now()).run();
 }
 
 const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
@@ -67,6 +74,11 @@ const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
   COALESCE(publisher, '') AS publisher, COALESCE(published_date, '') AS publishedDate,
   COALESCE(description, '') AS description, page_count AS pageCount,
   word_count AS wordCount, COALESCE(word_count_source, '') AS wordCountSource,
+  density_words_per_page AS densityWordsPerPage,
+  COALESCE(density_sample_size, 0) AS densitySampleSize,
+  COALESCE(density_confidence, 0) AS densityConfidence,
+  density_analyzed_at AS densityAnalyzedAt,
+  COALESCE(density_method, '') AS densityMethod,
   COALESCE(language, '') AS language, COALESCE(metadata_source, '') AS metadataSource,
   COALESCE(recognition_method, '') AS recognitionMethod,
   COALESCE(recognition_confidence, 0) AS recognitionConfidence, created_at AS createdAt,
@@ -93,12 +105,16 @@ export const storage: BookStorage = {
     if (images.back) await BOOK_IMAGES.put(backKey!, images.back.bytes, { httpMetadata: { contentType: images.back.contentType } });
     await DB.prepare(`INSERT INTO books (
       id, title, subtitle, author, series, category, color, isbn, isbn10, isbn13,
-      publisher, published_date, description, page_count, word_count, word_count_source, language, metadata_source,
+      publisher, published_date, description, page_count, word_count, word_count_source,
+      density_words_per_page, density_sample_size, density_confidence, density_analyzed_at, density_method,
+      language, metadata_source,
       recognition_method, recognition_confidence, external_cover_url, front_image_key, back_image_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       id, input.title, input.subtitle, input.author, input.series, input.category, input.color,
       input.isbn, input.isbn10, input.isbn13, input.publisher, input.publishedDate,
-      input.description, input.pageCount, input.wordCount, input.wordCountSource, input.language, input.metadataSource,
+      input.description, input.pageCount, input.wordCount, input.wordCountSource,
+      input.densityWordsPerPage, input.densitySampleSize, input.densityConfidence, input.densityAnalyzedAt, input.densityMethod,
+      input.language, input.metadataSource,
       input.recognitionMethod, input.recognitionConfidence, input.externalCoverUrl, frontKey, backKey, createdAt,
     ).run();
     return { ...input, id, createdAt, cover: frontKey ? `/api/books/image/${id}/front` : undefined };
@@ -108,6 +124,19 @@ export const storage: BookStorage = {
     const { DB } = runtime();
     await prepareDatabase(DB);
     const result = await DB.prepare("UPDATE books SET external_cover_url = ? WHERE id = ?").bind(externalCoverUrl, id).run();
+    return Boolean(result.meta.changes);
+  },
+
+  async updateDensityMetrics(id, metrics) {
+    const { DB } = runtime();
+    await prepareDatabase(DB);
+    const result = await DB.prepare(`UPDATE books SET word_count = ?, word_count_source = ?,
+      density_words_per_page = ?, density_sample_size = ?, density_confidence = ?,
+      density_analyzed_at = ?, density_method = ? WHERE id = ?`).bind(
+      metrics.wordCount, metrics.wordCountSource, metrics.densityWordsPerPage,
+      metrics.densitySampleSize, metrics.densityConfidence, metrics.densityAnalyzedAt,
+      metrics.densityMethod, id,
+    ).run();
     return Boolean(result.meta.changes);
   },
 

@@ -109,3 +109,20 @@ test("tracks book density and projects learning-goal pace", async () => {
   assert.match(page, /Log reading/);
   assert.match(css, /\.pace-card/);
 });
+
+test("analyzes representative pages transiently and stores only density aggregates", async () => {
+  const [page, api, storage] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(booksApiUrl, "utf8"),
+    readFile(new URL("../lib/storage-types.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /Analyze density/);
+  assert.match(page, /await import\("tesseract\.js"\)/);
+  assert.match(page, /transient-ocr-median-v1/);
+  assert.match(page, /densityMetrics/);
+  assert.match(page, /densityConfidence/);
+  assert.match(api, /updateDensityMetrics/);
+  assert.match(storage, /densityWordsPerPage/);
+  assert.match(storage, /densitySampleSize/);
+  assert.match(storage, /densityAnalyzedAt/);
+});

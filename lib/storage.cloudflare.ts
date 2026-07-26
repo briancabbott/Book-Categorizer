@@ -39,6 +39,7 @@ async function prepareDatabase(db: D1Database) {
     ["metadata_source", "metadata_source TEXT"],
     ["recognition_method", "recognition_method TEXT"],
     ["recognition_confidence", "recognition_confidence INTEGER"],
+    ["external_cover_url", "external_cover_url TEXT"],
     ["front_image_key", "front_image_key TEXT"],
     ["back_image_key", "back_image_key TEXT"],
     ["created_at", "created_at INTEGER NOT NULL DEFAULT 0"],
@@ -49,6 +50,8 @@ async function prepareDatabase(db: D1Database) {
   await db.prepare("CREATE INDEX IF NOT EXISTS books_sort_idx ON books(category, author, series, title)").run();
   await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
     (version, name, applied_at) VALUES (3, 'durable additive book schema', ?)`).bind(Date.now()).run();
+  await db.prepare(`INSERT OR IGNORE INTO librarian_schema_migrations
+    (version, name, applied_at) VALUES (4, 'external online cover URLs', ?)`).bind(Date.now()).run();
 }
 
 const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
@@ -59,6 +62,7 @@ const selectSql = `SELECT id, title, COALESCE(subtitle, '') AS subtitle, author,
   COALESCE(language, '') AS language, COALESCE(metadata_source, '') AS metadataSource,
   COALESCE(recognition_method, '') AS recognitionMethod,
   COALESCE(recognition_confidence, 0) AS recognitionConfidence, created_at AS createdAt,
+  COALESCE(external_cover_url, '') AS externalCoverUrl,
   CASE WHEN front_image_key IS NULL THEN NULL ELSE '/api/books/image/' || id || '/front' END AS cover
   FROM books ORDER BY category, author, series, title`;
 
@@ -82,14 +86,21 @@ export const storage: BookStorage = {
     await DB.prepare(`INSERT INTO books (
       id, title, subtitle, author, series, category, color, isbn, isbn10, isbn13,
       publisher, published_date, description, page_count, language, metadata_source,
-      recognition_method, recognition_confidence, front_image_key, back_image_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      recognition_method, recognition_confidence, external_cover_url, front_image_key, back_image_key, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       id, input.title, input.subtitle, input.author, input.series, input.category, input.color,
       input.isbn, input.isbn10, input.isbn13, input.publisher, input.publishedDate,
       input.description, input.pageCount, input.language, input.metadataSource,
-      input.recognitionMethod, input.recognitionConfidence, frontKey, backKey, createdAt,
+      input.recognitionMethod, input.recognitionConfidence, input.externalCoverUrl, frontKey, backKey, createdAt,
     ).run();
     return { ...input, id, createdAt, cover: frontKey ? `/api/books/image/${id}/front` : undefined };
+  },
+
+  async updateExternalCover(id, externalCoverUrl) {
+    const { DB } = runtime();
+    await prepareDatabase(DB);
+    const result = await DB.prepare("UPDATE books SET external_cover_url = ? WHERE id = ?").bind(externalCoverUrl, id).run();
+    return Boolean(result.meta.changes);
   },
 
   async deleteBook(id) {

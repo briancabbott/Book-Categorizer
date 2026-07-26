@@ -78,3 +78,16 @@ test("prevents duplicate database entries before storing images", async () => {
   assert.match(api, /duplicate:\s*true/);
   assert.match(page, /result\.duplicate/);
 });
+
+test("stores and displays online book cover URLs", async () => {
+  const [page, api, css] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(booksApiUrl, "utf8"),
+    readFile(cssUrl, "utf8"),
+  ]);
+  assert.match(page, /externalCoverUrl/);
+  assert.match(page, /book\.externalCoverUrl \|\| book\.cover/);
+  assert.match(api, /externalCoverUrl:\s*text/);
+  assert.match(api, /updateExternalCover/);
+  assert.match(css, /\.cover-cell/);
+});

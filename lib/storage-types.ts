@@ -17,6 +17,7 @@ export type BookRecord = {
   metadataSource: string;
   recognitionMethod: string;
   recognitionConfidence: number;
+  externalCoverUrl: string;
   cover?: string;
   createdAt: number;
 };
@@ -37,6 +38,7 @@ export type StoredImage = {
 export interface BookStorage {
   listBooks(): Promise<BookRecord[]>;
   createBook(input: BookInput, images: { front?: ImageInput; back?: ImageInput }): Promise<BookRecord>;
+  updateExternalCover(id: string, externalCoverUrl: string): Promise<boolean>;
   deleteBook(id: string): Promise<boolean>;
   getImage(id: string, side: "front" | "back"): Promise<StoredImage | null>;
 }

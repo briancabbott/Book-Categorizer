@@ -22,6 +22,7 @@ type Book = {
   metadataSource?: string;
   recognitionMethod?: string;
   recognitionConfidence?: number;
+  externalCoverUrl?: string;
 };
 
 type RecognizedBook = Omit<Book, "id" | "series" | "color" | "cover"> & {
@@ -122,6 +123,7 @@ export default function Home() {
   const [metadataSource, setMetadataSource] = useState("");
   const [recognitionMethod, setRecognitionMethod] = useState("");
   const [recognitionConfidence, setRecognitionConfidence] = useState(0);
+  const [externalCoverUrl, setExternalCoverUrl] = useState("");
   const [scanPhase, setScanPhase] = useState("");
   const [scanError, setScanError] = useState("");
   const [saveError, setSaveError] = useState("");
@@ -200,7 +202,8 @@ export default function Home() {
     metadataSource,
     recognitionMethod,
     recognitionConfidence,
-  }), [title, subtitle, author, series, category, front, isbn, isbn10, isbn13, publisher, publishedDate, description, pageCount, language, metadataSource, recognitionMethod, recognitionConfidence]);
+    externalCoverUrl,
+  }), [title, subtitle, author, series, category, front, isbn, isbn10, isbn13, publisher, publishedDate, description, pageCount, language, metadataSource, recognitionMethod, recognitionConfidence, externalCoverUrl]);
 
   const position = useMemo(() => {
     const all = [...ordered, proposed].sort(bookSort);
@@ -228,6 +231,7 @@ export default function Home() {
     setMetadataSource(book.metadataSource || "");
     setRecognitionMethod(book.recognitionMethod || "");
     setRecognitionConfidence(book.recognitionConfidence || 0);
+    setExternalCoverUrl(book.coverUrl || "");
   }
 
   function updateScanPhase(scanId: number, message: string) {
@@ -382,6 +386,7 @@ export default function Home() {
     setMetadataSource("");
     setRecognitionMethod("");
     setRecognitionConfidence(0);
+    setExternalCoverUrl("");
     setAssignmentStatus("scanning");
     setStatus("review");
     setScanError("");
@@ -446,6 +451,7 @@ export default function Home() {
     data.set("metadataSource", book.metadataSource || "");
     data.set("recognitionMethod", book.recognitionMethod || "");
     data.set("recognitionConfidence", String(book.recognitionConfidence || 0));
+    data.set("externalCoverUrl", book.externalCoverUrl || "");
     if (frontFile) data.set("front", frontFile);
     if (backFile) data.set("back", backFile);
     setSaving(true);
@@ -490,6 +496,7 @@ export default function Home() {
     setMetadataSource("");
     setRecognitionMethod("");
     setRecognitionConfidence(0);
+    setExternalCoverUrl("");
     setScanPhase("");
     setScanError("");
     setSaveError("");
@@ -715,7 +722,7 @@ export default function Home() {
           {!books.length ? <EmptyCollection onAdd={() => setView("add")} /> : (
             <div className="library-table" role="table" aria-label="Technical library catalog">
               <div className="library-columns" role="row">
-                <strong role="columnheader">Title</strong><strong role="columnheader">Authors</strong>
+                <strong role="columnheader">Cover</strong><strong role="columnheader">Title</strong><strong role="columnheader">Authors</strong>
                 <strong role="columnheader">Published</strong><strong role="columnheader">ISBN</strong><strong role="columnheader">Actions</strong>
               </div>
               {libraryGroups.map(([section, sectionBooks], index) => {
@@ -725,6 +732,8 @@ export default function Home() {
                     <div className="discipline-bar">{discipline}</div>}
                   <div className="subsection-bar"><span>{subsection}</span><small>{sectionBooks.length} {sectionBooks.length === 1 ? "book" : "books"}</small></div>
                   {sectionBooks.map((book) => <div className="library-row" role="row" key={book.id}>
+                    <span role="cell" className="cover-cell">{(book.externalCoverUrl || book.cover) ?
+                      <img src={book.externalCoverUrl || book.cover} alt={`Cover of ${book.title}`} /> : <i aria-hidden="true" />}</span>
                     <span role="cell"><strong>{book.title}</strong>{book.subtitle && <small>{book.subtitle}</small>}</span>
                     <span role="cell">{book.author}</span><span role="cell">{book.publishedDate || "—"}</span>
                     <span role="cell">{book.isbn13 || book.isbn10 || book.isbn || "—"}</span>

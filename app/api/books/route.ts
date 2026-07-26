@@ -73,6 +73,7 @@ export async function POST(request: Request) {
     metadataSource: text(form, "metadataSource"),
     recognitionMethod: text(form, "recognitionMethod"),
     recognitionConfidence: Number(form.get("recognitionConfidence") || 0),
+    externalCoverUrl: text(form, "externalCoverUrl"),
   };
   if (!input.title || !input.author) {
     return Response.json({ error: "Title and author are required." }, { status: 422 });
@@ -96,6 +97,18 @@ export async function POST(request: Request) {
       error: "Unable to save the book.",
       ...(process.env.NODE_ENV === "development" ? { detail: error instanceof Error ? error.message : String(error) } : {}),
     }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json() as { id?: string; externalCoverUrl?: string };
+    if (!body.id || !body.externalCoverUrl) return Response.json({ error: "Book id and cover URL are required." }, { status: 422 });
+    const updated = await storage.updateExternalCover(body.id, body.externalCoverUrl);
+    if (!updated) return Response.json({ error: "Book not found." }, { status: 404 });
+    return Response.json({ updated: true, id: body.id, externalCoverUrl: body.externalCoverUrl });
+  } catch (error) {
+    return Response.json({ error: "Unable to update the online cover.", detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 

@@ -1,13 +1,13 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DeleteCommand, DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, PutCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { BookInput, BookRecord, BookStorage, ImageInput, StoredImage } from "./storage-types";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), ".data");
 const booksFile = path.join(dataDir, "books.json");
-const localSchemaVersion = 1;
+const localSchemaVersion = 2;
 
 type LocalStore = { schemaVersion: number; books: BookRecord[] };
 
@@ -34,7 +34,16 @@ async function localStore(): Promise<LocalStore> {
     await writeLocalStore(migrated);
     return migrated;
   }
-  return { schemaVersion: parsed.schemaVersion || localSchemaVersion, books: parsed.books || [] };
+  if ((parsed.schemaVersion || 1) < 2) {
+    await writeFile(path.join(dataDir, "books.pre-migration-v1.json"), source, { flag: "wx" }).catch(() => {});
+    const migrated = {
+      schemaVersion: localSchemaVersion,
+      books: (parsed.books || []).map((book) => ({ ...book, externalCoverUrl: book.externalCoverUrl || "" })),
+    };
+    await writeLocalStore(migrated);
+    return migrated;
+  }
+  return { schemaVersion: parsed.schemaVersion, books: parsed.books || [] };
 }
 
 async function writeLocalBooks(books: BookRecord[]) {
@@ -74,6 +83,14 @@ function localStorage(): BookStorage {
       if (remaining.length === store.books.length) return false;
       await writeLocalBooks(remaining);
       await rm(path.join(dataDir, "images", id), { recursive: true, force: true });
+      return true;
+    },
+    async updateExternalCover(id, externalCoverUrl) {
+      const store = await localStore();
+      const book = store.books.find((entry) => entry.id === id);
+      if (!book) return false;
+      book.externalCoverUrl = externalCoverUrl;
+      await writeLocalBooks(store.books);
       return true;
     },
     async getImage(id, side) {
@@ -121,6 +138,16 @@ function awsStorage(): BookStorage {
         s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: `books/${id}/front` })),
         s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: `books/${id}/back` })),
       ]);
+      return Boolean(response.Attributes);
+    },
+    async updateExternalCover(id, externalCoverUrl) {
+      const response = await document.send(new UpdateCommand({
+        TableName: tableName,
+        Key: { id },
+        UpdateExpression: "SET externalCoverUrl = :url",
+        ExpressionAttributeValues: { ":url": externalCoverUrl },
+        ReturnValues: "ALL_NEW",
+      }));
       return Boolean(response.Attributes);
     },
     async getImage(id, side) {

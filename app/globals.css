@@ -51,12 +51,25 @@ h1 em, .placement h2 em { color: var(--terracotta); font-weight: 500; }
 .waiting { margin: auto; max-width: 270px; text-align: center; color: #87908c; }
 .waiting h3 { margin: 26px 0 10px; color: #5f6e68; font: 600 18px var(--font-serif); }
 .waiting p { font-size: 12px; line-height: 1.6; }
+.scanner-state { margin: auto; max-width: 310px; text-align: center; color: #697771; }
+.scanner-state h3 { margin: 24px 0 9px; color: var(--ink); font: 600 20px var(--font-serif); }
+.scanner-state p { min-height: 20px; font-size: 12px; }
+.scan-ring { width: 78px; height: 78px; display: block; margin: 8px auto; border: 2px solid #ded4c2; border-top-color: var(--terracotta); border-radius: 50%; animation: scan-spin 1s linear infinite; position: relative; }
+.scan-ring:after { content: ""; position: absolute; inset: 13px; border: 1px solid var(--gold); border-radius: 50%; }
+.scan-steps { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+.scan-steps i { width: 44px; height: 3px; background: #ded6c8; }
+.scan-steps i.done { background: var(--terracotta); }
+@keyframes scan-spin { to { transform: rotate(360deg); } }
 .waiting-books { height: 76px; display: flex; gap: 4px; justify-content: center; align-items: flex-end; opacity: .5; }
 .waiting-books i { width: 16px; height: 60px; border: 1px solid var(--ink); }
 .waiting-books i:nth-child(2) { height: 70px; border-color: var(--terracotta); }
 .waiting-books i:nth-child(3) { height: 53px; border-color: var(--gold); }
 .waiting-books i:nth-child(4) { height: 65px; transform: rotate(7deg); transform-origin: bottom; }
 .book-form { display: grid; gap: 18px; }
+.recognition-badge { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px; background: #e8f0e9; border-left: 3px solid #568f78; color: #365e4f; font-size: 11px; }
+.recognition-badge strong { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.scan-error { margin: 0; padding: 10px 12px; color: #8c3d31; background: #f6e3dc; font-size: 11px; line-height: 1.5; }
+.metadata-note { margin: -5px 0 0; color: #7c8580; font-size: 11px; }
 .book-form label { display: grid; gap: 7px; color: #6f7773; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .book-form input, .book-form select { width: 100%; padding: 13px 12px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: 0; outline: none; text-transform: none; letter-spacing: 0; }
 .book-form input:focus, .book-form select:focus { border-color: var(--terracotta); box-shadow: 0 0 0 2px rgba(200,101,77,.12); }
